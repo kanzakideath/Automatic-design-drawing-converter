@@ -37,6 +37,8 @@ SHAPE_BOUNDS = {
     4: (0.45, 0.0, 0.0, 0.10, 1.0, 1.0),    # pane/bars approximation
 }
 
+DIR_BITS = {'north': 1, 'east': 2, 'south': 4, 'west': 8}
+
 
 def open_preview_async(payload):
     """Open a GPU preview window on its own pyglet event-loop thread."""
@@ -57,6 +59,8 @@ def _run_preview_safe(payload):
 
 def _run_preview(payload):
     import pyglet
+
+    pyglet.options['debug_gl'] = False
     from pyglet import gl
 
     try:
@@ -76,15 +80,115 @@ def _shade(color, factor):
     )
 
 
+def _half_depth_box(facing, y0, y1):
+    if facing == 0:      # north
+        return (0.0, y0, 0.0, 1.0, y1, 0.5)
+    if facing == 2:      # south
+        return (0.0, y0, 0.5, 1.0, y1, 1.0)
+    if facing == 1:      # east
+        return (0.5, y0, 0.0, 1.0, y1, 1.0)
+    return (0.0, y0, 0.0, 0.5, y1, 1.0)
+
+
+def _wall_button_box(facing):
+    if facing == 0:
+        return (0.35, 0.35, 0.00, 0.65, 0.65, 0.12)
+    if facing == 2:
+        return (0.35, 0.35, 0.88, 0.65, 0.65, 1.00)
+    if facing == 1:
+        return (0.88, 0.35, 0.35, 1.00, 0.65, 0.65)
+    return (0.00, 0.35, 0.35, 0.12, 0.65, 0.65)
+
+
+def _connected_boxes(mask, pane=False):
+    if pane:
+        thickness = 0.10
+        lo, hi = 0.5 - thickness / 2.0, 0.5 + thickness / 2.0
+        if not mask:
+            return [(lo, 0.0, 0.0, hi, 1.0, 1.0), (0.0, 0.0, lo, 1.0, 1.0, hi)]
+        boxes = [(lo, 0.0, lo, hi, 1.0, hi)]
+        if mask & DIR_BITS['north']:
+            boxes.append((lo, 0.0, 0.0, hi, 1.0, 0.5))
+        if mask & DIR_BITS['south']:
+            boxes.append((lo, 0.0, 0.5, hi, 1.0, 1.0))
+        if mask & DIR_BITS['east']:
+            boxes.append((0.5, 0.0, lo, 1.0, 1.0, hi))
+        if mask & DIR_BITS['west']:
+            boxes.append((0.0, 0.0, lo, 0.5, 1.0, hi))
+        return boxes
+
+    boxes = [(0.34, 0.0, 0.34, 0.66, 1.0, 0.66)]
+    if mask & DIR_BITS['north']:
+        boxes.append((0.42, 0.30, 0.0, 0.58, 0.82, 0.5))
+    if mask & DIR_BITS['south']:
+        boxes.append((0.42, 0.30, 0.5, 0.58, 0.82, 1.0))
+    if mask & DIR_BITS['east']:
+        boxes.append((0.5, 0.30, 0.42, 1.0, 0.82, 0.58))
+    if mask & DIR_BITS['west']:
+        boxes.append((0.0, 0.30, 0.42, 0.5, 0.82, 0.58))
+    return boxes
+
+
+def _trapdoor_boxes(variant):
+    facing = variant & 3
+    top = bool(variant & 4)
+    opened = bool(variant & 8)
+    t = 0.1875
+    if not opened:
+        return [(0.0, 1.0 - t, 0.0, 1.0, 1.0, 1.0)] if top else [(0.0, 0.0, 0.0, 1.0, t, 1.0)]
+    if facing == 0:
+        return [(0.0, 0.0, 0.0, 1.0, 1.0, t)]
+    if facing == 2:
+        return [(0.0, 0.0, 1.0 - t, 1.0, 1.0, 1.0)]
+    if facing == 1:
+        return [(1.0 - t, 0.0, 0.0, 1.0, 1.0, 1.0)]
+    return [(0.0, 0.0, 0.0, t, 1.0, 1.0)]
+
+
+def _shape_boxes(shape_id, variant):
+    if shape_id == 0:
+        return [(0.0, 0.0, 0.0, 1.0, 1.0, 1.0, True)]
+    if shape_id == 1:
+        return [(0.0, 0.0, 0.0, 1.0, 0.5, 1.0, False)]
+    if shape_id == 5:
+        return [(0.0, 0.5, 0.0, 1.0, 1.0, 1.0, False)]
+    if shape_id == 6:
+        facing = variant & 3
+        if variant & 4:
+            boxes = [(0.0, 0.5, 0.0, 1.0, 1.0, 1.0), _half_depth_box(facing, 0.0, 0.5)]
+        else:
+            boxes = [(0.0, 0.0, 0.0, 1.0, 0.5, 1.0), _half_depth_box(facing, 0.5, 1.0)]
+        return [box + (False,) for box in boxes]
+    if shape_id == 7:
+        return [box + (False,) for box in _trapdoor_boxes(variant)]
+    if shape_id == 8:
+        facing = variant & 3
+        face = (variant >> 2) & 3
+        if face == 0:
+            return [(0.32, 0.0, 0.32, 0.68, 0.12, 0.68, False)]
+        if face == 2:
+            return [(0.32, 0.88, 0.32, 0.68, 1.0, 0.68, False)]
+        return [_wall_button_box(facing) + (False,)]
+    if shape_id == 9:
+        return [box + (False,) for box in _connected_boxes(variant, pane=False)]
+    if shape_id == 10:
+        return [box + (False,) for box in _connected_boxes(variant, pane=True)]
+    bounds = SHAPE_BOUNDS.get(shape_id, SHAPE_BOUNDS[0])
+    ox, oy, oz, sx, sy, sz = bounds
+    return [(ox, oy, oz, ox + sx, oy + sy, oz + sz, False)]
+
+
 def _count_exposed_faces(blocks, occupied):
     total = 0
     for block in blocks:
         x, y, z = block[:3]
         shape_id = int(block[8]) if len(block) > 8 else 0
+        variant = int(block[9]) if len(block) > 9 else 0
         ix, iy, iz = int(x), int(y), int(z)
-        for normal, _corners, _light in FACE_DEFS:
-            if shape_id != 0 or (ix + normal[0], iy + normal[1], iz + normal[2]) not in occupied:
-                total += 1
+        for _x0, _y0, _z0, _x1, _y1, _z1, occluding in _shape_boxes(shape_id, variant):
+            for normal, _corners, _light in FACE_DEFS:
+                if not occluding or (ix + normal[0], iy + normal[1], iz + normal[2]) not in occupied:
+                    total += 1
     return total
 
 
@@ -99,6 +203,7 @@ def build_mesh(payload):
     positions = array('f')
     colors = array('B')
     tex_coords = array('f')
+    indices = array('I')
     face_index = 0
     emitted_faces = 0
 
@@ -107,32 +212,35 @@ def build_mesh(payload):
         top_tile = int(block[6]) if len(block) > 6 else 0
         side_tile = int(block[7]) if len(block) > 7 else top_tile
         shape_id = int(block[8]) if len(block) > 8 else 0
-        ox, oy, oz, sx, sy, sz = SHAPE_BOUNDS.get(shape_id, SHAPE_BOUNDS[0])
-        full_occlusion = shape_id == 0
+        variant = int(block[9]) if len(block) > 9 else 0
         ix, iy, iz = int(x), int(y), int(z)
         base = (int(r), int(g), int(b))
-        for normal, corners, light in FACE_DEFS:
-            if full_occlusion and (ix + normal[0], iy + normal[1], iz + normal[2]) in occupied:
-                continue
-            if face_index % stride:
+        for x0, y0, z0, x1, y1, z1, occluding in _shape_boxes(shape_id, variant):
+            sx, sy, sz = x1 - x0, y1 - y0, z1 - z0
+            for normal, corners, light in FACE_DEFS:
+                if occluding and (ix + normal[0], iy + normal[1], iz + normal[2]) in occupied:
+                    continue
+                if face_index % stride:
+                    face_index += 1
+                    continue
+                shaded = _shade(base, light)
+                pts = [(ix + x0 + cx * sx, iy + y0 + cy * sy, iz + z0 + cz * sz) for cx, cy, cz in corners]
+                tile_index = top_tile if normal[1] else side_tile
+                if tile_index < 0 or tile_index >= len(atlas_uvs):
+                    tile_index = 0
+                u0, v0, u1, v1 = atlas_uvs[tile_index]
+                quad_uvs = ((u0, v0), (u1, v0), (u1, v1), (u0, v1))
+                base_vertex = len(positions) // 3
+                for corner_index, (px, py, pz) in enumerate(pts):
+                    positions.extend((float(px), float(py), float(pz)))
+                    colors.extend((shaded[0], shaded[1], shaded[2], 255))
+                    tex_coords.extend(quad_uvs[corner_index])
+                indices.extend((base_vertex, base_vertex + 1, base_vertex + 2,
+                                base_vertex, base_vertex + 2, base_vertex + 3))
+                emitted_faces += 1
                 face_index += 1
-                continue
-            shaded = _shade(base, light)
-            pts = [(ix + ox + cx * sx, iy + oy + cy * sy, iz + oz + cz * sz) for cx, cy, cz in corners]
-            tile_index = top_tile if normal[1] else side_tile
-            if tile_index < 0 or tile_index >= len(atlas_uvs):
-                tile_index = 0
-            u0, v0, u1, v1 = atlas_uvs[tile_index]
-            quad_uvs = ((u0, v0), (u1, v0), (u1, v1), (u0, v1))
-            for corner_index in TRI_ORDER:
-                px, py, pz = pts[corner_index]
-                positions.extend((float(px), float(py), float(pz)))
-                colors.extend((shaded[0], shaded[1], shaded[2], 255))
-                tex_coords.extend(quad_uvs[corner_index])
-            emitted_faces += 1
-            face_index += 1
 
-    return positions, colors, tex_coords, face_total, emitted_faces, stride
+    return positions, colors, tex_coords, indices, face_total, emitted_faces, stride
 
 
 def build_ground(bounds):
@@ -182,6 +290,7 @@ class GpuPreviewWindow:
         self.bounds = payload.get('bounds') or {}
         self.blocks = payload.get('blocks') or []
         self.vertex_count = 0
+        self.index_count = 0
         self.face_total = 0
         self.face_emitted = 0
         self.stride = 1
@@ -238,17 +347,19 @@ class GpuPreviewWindow:
     def _build_vertex_lists(self):
         from pyglet import gl
 
-        positions, colors, tex_coords, face_total, emitted_faces, stride = build_mesh(self.payload)
+        positions, colors, tex_coords, indices, face_total, emitted_faces, stride = build_mesh(self.payload)
         self.face_total = face_total
         self.face_emitted = emitted_faces
         self.stride = stride
         self.vertex_count = len(positions) // 3
-        self.mesh_list = self.program.vertex_list(
+        self.index_count = len(indices)
+        self.mesh_list = self.program.vertex_list_indexed(
             self.vertex_count, gl.GL_TRIANGLES,
+            indices,
             position=('f', positions),
             colors=('Bn', colors),
             tex_coords=('f', tex_coords),
-        ) if self.vertex_count else None
+        ) if self.vertex_count and self.index_count else None
 
         gp, gc, gt, gridp, gridc, gridt = build_ground(self.bounds)
         self.ground_list = self.program.vertex_list(

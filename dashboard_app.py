@@ -291,9 +291,13 @@ class InteractivePreview(tk.Canvas):
         h = max(150, self.winfo_height())
         try:
             large = w * h >= 260000
-            max_blocks = (7000 if large else 3500) if self._drag else (85000 if large else 45000)
+            max_blocks = (6500 if large else 3200) if self._drag else (36000 if large else 18000)
+            face_limit = (2600 if large else 1600) if self._drag else (11500 if large else 6200)
+            texture_limit = 0 if self._drag else (5200 if large else 3600)
             im = self.app._render_schematic_preview(w, h, max_blocks=max_blocks,
-                                                    view=self.view_state(), fast=bool(self._drag))
+                                                    view=self.view_state(), fast=bool(self._drag),
+                                                    face_limit_override=face_limit,
+                                                    texture_limit=texture_limit)
             self._photo = ImageTk.PhotoImage(im)
             self.delete('all')
             self.create_image(0, 0, image=self._photo, anchor='nw')
@@ -2281,19 +2285,25 @@ class DashboardApp:
                 pass
 
     # ---------------------------------------------------------------- visuals
+    def _preview_rec_parts(self, rec):
+        props = rec[4] if len(rec) > 4 and isinstance(rec[4], dict) else {}
+        return rec[0], rec[1], rec[2], rec[3], props
+
     def _gpu_preview_payload(self):
         records = self._render_records(max_blocks=10 ** 9)
         occupied = self._source_occupied_positions()
         bounds = self._record_bounds(records)
         atlas, tile_map = self._gpu_texture_atlas(records)
         blocks = []
-        for x, y, z, bid in records:
+        for rec in records:
+            x, y, z, bid, props = self._preview_rec_parts(rec)
             base = bd.strip_ns(bid)
             r, g, b = self._block_rgb(bid)
             top_tile = tile_map.get((base, True), 0)
             side_tile = tile_map.get((base, False), top_tile)
+            shape_id, variant = self._gpu_shape(base, props)
             blocks.append((int(x), int(y), int(z), int(r), int(g), int(b),
-                           top_tile, side_tile, self._gpu_shape_id(base)))
+                           top_tile, side_tile, shape_id, variant))
         return {
             'title': os.path.basename(self.src_path or 'schematic'),
             'blocks': blocks,
@@ -2307,7 +2317,7 @@ class DashboardApp:
         }
 
     def _gpu_texture_atlas(self, records):
-        bases = sorted({bd.strip_ns(bid) for _x, _y, _z, bid in records})
+        bases = sorted({bd.strip_ns(self._preview_rec_parts(rec)[3]) for rec in records})
         tile_size = 32
         entries = []
         tile_map = {}
@@ -2349,18 +2359,43 @@ class DashboardApp:
             'source': icons.minecraft_assets_label(),
         }, tile_map
 
-    def _gpu_shape_id(self, base):
+    def _gpu_shape(self, base, props=None):
         base = bd.strip_ns(base)
+        props = props or {}
+        facing = {'north': 0, 'east': 1, 'south': 2, 'west': 3}.get(str(props.get('facing', 'north')), 0)
         if base.endswith('_slab'):
-            return 1
+            slab_type = str(props.get('type', 'bottom'))
+            if slab_type == 'double':
+                return 0, 0
+            return (5 if slab_type == 'top' else 1), 0
+        if base.endswith('_stairs'):
+            top_bit = 4 if str(props.get('half', 'bottom')) == 'top' else 0
+            return 6, facing | top_bit
+        if base.endswith('_trapdoor'):
+            top_bit = 4 if str(props.get('half', 'bottom')) == 'top' else 0
+            open_bit = 8 if str(props.get('open', 'false')) == 'true' else 0
+            return 7, facing | top_bit | open_bit
         if ('rail' in base or base.endswith('_carpet') or base.endswith('_pressure_plate')
-                or base in ('snow', 'repeater', 'comparator')):
-            return 2
-        if base.endswith('_fence') or base.endswith('_wall') or base in ('iron_bars', 'chain'):
-            return 3
+                or base in ('snow', 'repeater', 'comparator', 'redstone_wire')):
+            return 2, 0
+        if base.endswith('_fence') or base.endswith('_wall'):
+            return 9, self._connection_mask(props)
+        if base.endswith('_pane') or base in ('iron_bars', 'chain'):
+            return 10, self._connection_mask(props)
+        if base.endswith('_button'):
+            face_map = {'floor': 0, 'wall': 1, 'ceiling': 2}
+            return 8, facing | (face_map.get(str(props.get('face', 'wall')), 1) << 2)
         if base.endswith('_pane'):
-            return 4
-        return 0
+            return 10, self._connection_mask(props)
+        return 0, 0
+
+    def _connection_mask(self, props):
+        mask = 0
+        for bit, name in enumerate(('north', 'east', 'south', 'west')):
+            value = str(props.get(name, 'none'))
+            if value not in ('none', 'false', '0'):
+                mask |= 1 << bit
+        return mask
 
     def _loaded_thumb(self, w, h):
         key = ('loaded', w, h, self.src_path, icons.minecraft_assets_label())
@@ -2381,7 +2416,8 @@ class DashboardApp:
         self.image_cache[key] = img
         return img
 
-    def _render_schematic_preview(self, w, h, max_blocks=80000, view=None, fast=False):
+    def _render_schematic_preview(self, w, h, max_blocks=80000, view=None, fast=False,
+                                  face_limit_override=None, texture_limit=None):
         if fast:
             max_blocks = min(max_blocks, 7000)
         im = Image.new('RGB', (w, h), '#87c9ff')
@@ -2399,10 +2435,13 @@ class DashboardApp:
 
         self._draw_build_shadow(d, records, camera, w, h, fast=fast)
         faces = self._visible_block_faces(records, camera, occupied_positions=occupied)
-        face_limit = 4200 if fast else (32000 if w * h >= 260000 else 12000)
+        face_limit = (int(face_limit_override) if face_limit_override is not None
+                      else (4200 if fast else (32000 if w * h >= 260000 else 12000)))
         if len(faces) > face_limit:
             faces = faces[-face_limit:]
-        use_textures = not fast and len(faces) <= 14000
+        if texture_limit is None:
+            texture_limit = 14000
+        use_textures = not fast and len(faces) <= int(texture_limit)
         for depth, poly, bid, normal, seed in faces:
             self._draw_minecraft_face(im, d, poly, self._block_rgb(bid), normal, seed, bid,
                                       textured=use_textures)
@@ -2530,7 +2569,8 @@ class DashboardApp:
 
     def _draw_build_shadow(self, draw, records, camera, w, h, fast=False):
         footprint = {}
-        for x, y, z, _bid in records:
+        for rec in records:
+            x, y, z = rec[:3]
             if y == 0:
                 footprint[(x, z)] = True
         for x, z in list(footprint.keys())[:700 if fast else 3500]:
@@ -2543,8 +2583,8 @@ class DashboardApp:
                     draw.polygon(poly, fill='#4a7e2d')
 
     def _visible_block_faces(self, records, camera, occupied_positions=None):
-        occupied = occupied_positions or set((int(x), int(y), int(z)) for x, y, z, _bid in records)
-        by_pos = {(int(x), int(y), int(z)): bid for x, y, z, bid in records}
+        occupied = occupied_positions or set((int(rec[0]), int(rec[1]), int(rec[2])) for rec in records)
+        by_pos = {(int(rec[0]), int(rec[1]), int(rec[2])): rec[3] for rec in records}
         face_defs = [
             ((0, 1, 0), lambda x, y, z: [(x, y + 1, z), (x + 1, y + 1, z), (x + 1, y + 1, z + 1), (x, y + 1, z + 1)]),
             ((0, 0, 1), lambda x, y, z: [(x, y, z + 1), (x + 1, y, z + 1), (x + 1, y + 1, z + 1), (x, y + 1, z + 1)]),
@@ -2731,9 +2771,11 @@ class DashboardApp:
             target_map[bd.strip_ns(conv.source)] = mapped
         raw_records = self._source_render_records(max_blocks=max_blocks)
         records = []
-        for x, y, z, source in raw_records:
+        for rec in raw_records:
+            x, y, z, source = rec[:4]
+            props = rec[4] if len(rec) > 4 and isinstance(rec[4], dict) else {}
             base = bd.strip_ns(source)
-            records.append((x, y, z, target_map.get(source, target_map.get(base, base))))
+            records.append((x, y, z, target_map.get(source, target_map.get(base, base)), props))
         return records
 
     def _source_occupied_positions(self):
@@ -2742,7 +2784,7 @@ class DashboardApp:
         key = (id(self.loaded_nbt), 'occupied_positions')
         if key not in self._preview_source_cache:
             records = self._source_render_records(max_blocks=10 ** 9)
-            self._preview_source_cache[key] = set((int(x), int(y), int(z)) for x, y, z, _bid in records)
+            self._preview_source_cache[key] = set((int(rec[0]), int(rec[1]), int(rec[2])) for rec in records)
         return self._preview_source_cache[key]
 
     def _source_render_records(self, max_blocks=12000):
@@ -2767,19 +2809,22 @@ class DashboardApp:
                 min_x = min(r[0] for r in records)
                 min_y = min(r[1] for r in records)
                 min_z = min(r[2] for r in records)
-                records = [(x - min_x, y - min_y, z - min_z, bid) for x, y, z, bid in records]
+                records = [(r[0] - min_x, r[1] - min_y, r[2] - min_z, r[3],
+                            r[4] if len(r) > 4 and isinstance(r[4], dict) else {})
+                           for r in records]
             self._preview_source_cache[source_key] = records
         surface_key = (id(self.loaded_nbt), 'surface_records')
         if surface_key in self._preview_source_cache:
             surface = self._preview_source_cache[surface_key]
         else:
-            occupied = set((int(x), int(y), int(z)) for x, y, z, _bid in records)
+            occupied = set((int(rec[0]), int(rec[1]), int(rec[2])) for rec in records)
             surface = []
             neighbor_dirs = ((0, 1, 0), (0, -1, 0), (1, 0, 0), (-1, 0, 0), (0, 0, 1), (0, 0, -1))
-            for x, y, z, bid in records:
+            for rec in records:
+                x, y, z = rec[:3]
                 ix, iy, iz = int(x), int(y), int(z)
                 if any((ix + dx, iy + dy, iz + dz) not in occupied for dx, dy, dz in neighbor_dirs):
-                    surface.append((x, y, z, bid))
+                    surface.append(rec)
             self._preview_source_cache[(id(self.loaded_nbt), 'occupied_positions')] = occupied
             self._preview_source_cache[surface_key] = surface
         sampled = surface or records
@@ -2818,12 +2863,18 @@ class DashboardApp:
             base = bd.strip_ns(source)
             if base in ('air', 'cave_air', 'void_air'):
                 continue
+            props_tag = entry.get('Properties', {})
+            props = {}
+            try:
+                props = {str(k): str(v) for k, v in props_tag.items()}
+            except Exception:
+                props = {}
             seen += 1
             y = idx // layer
             rem = idx - y * layer
             z = rem // sx
             x = rem - z * sx
-            rec = (int(pos[0]) + x * dx, int(pos[1]) + y * dy, int(pos[2]) + z * dz, source)
+            rec = (int(pos[0]) + x * dx, int(pos[1]) + y * dy, int(pos[2]) + z * dz, source, props)
             if len(out) < cap:
                 out.append(rec)
             else:
