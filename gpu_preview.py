@@ -583,9 +583,9 @@ class GpuPreviewWindow:
         if len(title) > 54:
             title = title[:51] + '...'
         mode = '内部視点' if self.mode == 'walk' else '外観'
-        downsample = ' / 速度優先LOD %d' % self.stride if self.stride > 1 else ''
+        downsample = ' / 高速LOD %d' % self.stride if self.stride > 1 else ''
         self.label.text = (
-            '%s | %s | %.0f fps | 面 %s%s'
+            '%s | %s | %.0f fps | 面 %s%s\n左ドラッグ: 回転 / 右ドラッグ: 移動 / ホイール: 拡大縮小 / R: リセット / F: 内部視点'
             % (title, mode, self.fps, f'{self.face_emitted:,}/{self.face_total:,}', downsample)
         )
 
@@ -605,7 +605,7 @@ class GpuPreviewWindow:
             self._pan_orbit(dx, dy)
         elif buttons & mouse.LEFT:
             self.yaw += dx * 0.15
-            self.pitch = max(-12.0, min(78.0, self.pitch + dy * 0.12))
+            self.pitch = max(-12.0, min(78.0, self.pitch - dy * 0.10))
 
     def on_mouse_scroll(self, _x, _y, _sx, sy):
         self.zoom = max(0.18, min(8.0, self.zoom * (1.06 ** sy)))

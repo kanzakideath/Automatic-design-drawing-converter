@@ -36,8 +36,8 @@ KEEP = '__keep__'
 GPU_PREVIEW_BLOCK_LIMIT = 180000
 GPU_PREVIEW_FACE_LIMIT = 220000
 CPU_PREVIEW_IDLE_BLOCK_LIMIT = 1600
-CPU_PREVIEW_IDLE_FACE_LIMIT = 560
-CPU_PREVIEW_TEXTURE_FACE_LIMIT = 72
+CPU_PREVIEW_IDLE_FACE_LIMIT = 2400
+CPU_PREVIEW_TEXTURE_FACE_LIMIT = 2400
 CPU_PREVIEW_DRAG_BLOCK_LIMIT = 96
 CPU_PREVIEW_DRAG_FACE_LIMIT = 28
 
@@ -382,7 +382,7 @@ class InteractivePreview(tk.Canvas):
         h = max(150, self.winfo_height())
         try:
             large = w * h >= 260000
-            render_scale = 0.34 if self._drag else (0.48 if large else 0.62)
+            render_scale = 0.34 if self._drag else (0.58 if large else 0.70)
             rw = max(220, int(w * render_scale))
             rh = max(135, int(h * render_scale))
             if self._drag:
@@ -2149,7 +2149,10 @@ class DashboardApp:
             filetypes=[('PNG', '*.png'), ('すべて', '*.*')])
         if not out:
             return
-        im = self._render_schematic_preview(1280, 720)
+        view = self.preview_view.view_state() if hasattr(self, 'preview_view') else None
+        im = self._render_schematic_preview(1280, 720, max_blocks=5200, view=view, fast=False,
+                                            face_limit_override=8200, texture_limit=8200,
+                                            min_face_px=1.0, focus_view=True)
         im.save(out)
         messagebox.showinfo(APP_TITLE, 'プレビューを書き出しました:\n%s' % out)
 
@@ -2533,9 +2536,9 @@ class DashboardApp:
             'startup_timeout': 4.5,
             'target_fps': 240,
             'initial_mode': 'orbit',
-            'initial_yaw': -28.0,
-            'initial_pitch': 18.0,
-            'initial_zoom': 4.4,
+            'initial_yaw': -38.0,
+            'initial_pitch': 26.0,
+            'initial_zoom': 1.65,
         }
 
     def _gpu_texture_atlas(self, records):
@@ -2624,9 +2627,9 @@ class DashboardApp:
         key = ('loaded', w, h, self.src_path, icons.minecraft_assets_label())
         if key in self.image_cache:
             return self.image_cache[key]
-        im = self._render_schematic_preview(w, h, max_blocks=18000, fast=True,
-                                            face_limit_override=1800, texture_limit=1800,
-                                            min_face_px=2.0)
+        im = self._render_schematic_preview(w, h, max_blocks=1600, fast=True,
+                                            face_limit_override=1600, texture_limit=1600,
+                                            min_face_px=1.4, focus_view=True)
         img = ImageTk.PhotoImage(im)
         self.image_cache[key] = img
         return img
@@ -2636,9 +2639,9 @@ class DashboardApp:
                icons.minecraft_assets_label())
         if key in self.image_cache:
             return self.image_cache[key]
-        im = self._render_schematic_preview(w, h, max_blocks=22000, fast=True,
-                                            face_limit_override=2200, texture_limit=2200,
-                                            min_face_px=2.0)
+        im = self._render_schematic_preview(w, h, max_blocks=1800, fast=True,
+                                            face_limit_override=1800, texture_limit=1800,
+                                            min_face_px=1.4, focus_view=True)
         img = ImageTk.PhotoImage(im)
         self.image_cache[key] = img
         return img
@@ -2698,7 +2701,7 @@ class DashboardApp:
     def _focused_render_records(self, max_blocks=5600):
         max_blocks = max(100, int(max_blocks or 5600))
         if max_blocks <= 6000:
-            source_limit = max(900, int(max_blocks * 1.5))
+            source_limit = max(40000, int(max_blocks * 16))
         else:
             source_limit = min(180000, max_blocks)
         raw_records = self._source_surface_records(max_blocks=source_limit)
