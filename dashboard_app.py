@@ -212,7 +212,7 @@ class InteractivePreview(tk.Canvas):
         self.app = app
         self.yaw = -38.0
         self.pitch = 0.34
-        self.zoom = 1.18
+        self.zoom = 1.55
         self.mode = 'orbit'
         self._photo = None
         self._drag = None
@@ -261,7 +261,7 @@ class InteractivePreview(tk.Canvas):
     def reset_view(self):
         self.yaw = -38.0
         self.pitch = 0.34
-        self.zoom = 1.18
+        self.zoom = 1.55
         self.mode = 'orbit'
         self.refresh(immediate=True)
 
@@ -291,9 +291,9 @@ class InteractivePreview(tk.Canvas):
         h = max(150, self.winfo_height())
         try:
             large = w * h >= 260000
-            max_blocks = (6500 if large else 3200) if self._drag else (36000 if large else 18000)
-            face_limit = (2600 if large else 1600) if self._drag else (11500 if large else 6200)
-            texture_limit = 0 if self._drag else (5200 if large else 3600)
+            max_blocks = (6500 if large else 3200) if self._drag else (90000 if large else 70000)
+            face_limit = (2600 if large else 1600) if self._drag else (36000 if large else 24000)
+            texture_limit = 0 if self._drag else face_limit
             im = self.app._render_schematic_preview(w, h, max_blocks=max_blocks,
                                                     view=self.view_state(), fast=bool(self._drag),
                                                     face_limit_override=face_limit,
@@ -2438,7 +2438,9 @@ class DashboardApp:
         face_limit = (int(face_limit_override) if face_limit_override is not None
                       else (4200 if fast else (32000 if w * h >= 260000 else 12000)))
         if len(faces) > face_limit:
-            faces = faces[-face_limit:]
+            step = len(faces) / float(max(1, face_limit))
+            faces = [faces[min(len(faces) - 1, int((i + 0.5) * step))]
+                     for i in range(face_limit)]
         if texture_limit is None:
             texture_limit = 14000
         use_textures = not fast and len(faces) <= int(texture_limit)
@@ -2472,7 +2474,7 @@ class DashboardApp:
         view = view or {}
         span = max(bounds['span_x'], bounds['span_z'])
         height = bounds['span_y']
-        zoom = max(0.45, min(3.4, float(view.get('zoom', 1.18) or 1.18)))
+        zoom = max(0.45, min(3.4, float(view.get('zoom', 1.55) or 1.55)))
         yaw = math.radians(float(view.get('yaw', -38.0) or 0.0))
         pitch = max(-0.12, min(0.88, float(view.get('pitch', 0.34) or 0.34)))
         mode = view.get('mode', 'orbit')
@@ -2627,9 +2629,10 @@ class DashboardApp:
             except Exception:
                 tex = None
             if tex is not None and self._paste_preview_texture(canvas, tex, poly, factor):
-                draw.polygon(poly, outline=outline)
+                if size >= 9:
+                    draw.polygon(poly, outline=self._shade(color, 0.62))
                 return
-        draw.polygon(poly, fill=fill, outline=outline)
+        draw.polygon(poly, fill=fill, outline=outline if size >= 5 else None)
         if size >= 8:
             self._draw_face_texture(draw, poly, fill, seed)
 

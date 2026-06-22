@@ -208,13 +208,12 @@ def build_mesh(payload):
     emitted_faces = 0
 
     for block in blocks:
-        x, y, z, r, g, b = block[:6]
+        x, y, z, _r, _g, _b = block[:6]
         top_tile = int(block[6]) if len(block) > 6 else 0
         side_tile = int(block[7]) if len(block) > 7 else top_tile
         shape_id = int(block[8]) if len(block) > 8 else 0
         variant = int(block[9]) if len(block) > 9 else 0
         ix, iy, iz = int(x), int(y), int(z)
-        base = (int(r), int(g), int(b))
         for x0, y0, z0, x1, y1, z1, occluding in _shape_boxes(shape_id, variant):
             sx, sy, sz = x1 - x0, y1 - y0, z1 - z0
             for normal, corners, light in FACE_DEFS:
@@ -223,7 +222,7 @@ def build_mesh(payload):
                 if face_index % stride:
                     face_index += 1
                     continue
-                shaded = _shade(base, light)
+                light_value = max(0, min(255, int(255 * light)))
                 pts = [(ix + x0 + cx * sx, iy + y0 + cy * sy, iz + z0 + cz * sz) for cx, cy, cz in corners]
                 tile_index = top_tile if normal[1] else side_tile
                 if tile_index < 0 or tile_index >= len(atlas_uvs):
@@ -233,7 +232,7 @@ def build_mesh(payload):
                 base_vertex = len(positions) // 3
                 for corner_index, (px, py, pz) in enumerate(pts):
                     positions.extend((float(px), float(py), float(pz)))
-                    colors.extend((shaded[0], shaded[1], shaded[2], 255))
+                    colors.extend((light_value, light_value, light_value, 255))
                     tex_coords.extend(quad_uvs[corner_index])
                 indices.extend((base_vertex, base_vertex + 1, base_vertex + 2,
                                 base_vertex, base_vertex + 2, base_vertex + 3))
@@ -513,7 +512,8 @@ class GpuPreviewWindow:
         self.label.width = max(240, self.window.width - 24)
         self.label.text = (
             '%s | %s | %.0f fps | 面 %s%s\n'
-            '左ドラッグ: 回転   右ドラッグ/Shift+左: 平行移動   ホイール: ズーム   F: 内部視点   R: リセット   Esc: 閉じる'
+            '左ドラッグ: 回転/視点移動   右ドラッグ/Shift+左: 平行移動   ホイール: ズーム   '
+            'F: 内部視点   1/2/3: 視点切替   R: リセット   Esc: 閉じる'
             % (title, mode, self.fps, f'{self.face_emitted:,}/{self.face_total:,}', downsample)
         )
         self.label.draw()
