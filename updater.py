@@ -117,10 +117,17 @@ def _github_release_to_update(data: dict) -> UpdateInfo | None:
             continue
         score = 0
         lowered = name.lower()
-        if "設計図素材変換ツール" in name:
-            score += 50
+        preferred_names = {
+            "設計図素材変換ツール.exe".lower(),
+            "schematicmaterialconverter.exe",
+            ("schematicmaterialconverter-v%s.exe" % version.lower()) if version else "",
+        }
+        if lowered in preferred_names:
+            score += 60
         if "schematic" in lowered or "converter" in lowered:
             score += 25
+        if lowered == "default.exe":
+            score += 5
         if "setup" in lowered or "installer" in lowered:
             score -= 20
         digest = str(asset.get("digest") or "").strip().lower()
