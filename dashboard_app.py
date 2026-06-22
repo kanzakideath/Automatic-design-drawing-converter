@@ -1973,7 +1973,7 @@ class DashboardApp:
         elif fallback_font:
             draw.text(xy, ell, font=fallback_font, fill=fill)
 
-    def _render_materials_image(self):
+    def _render_materials_image_legacy(self):
         rows = self._material_list_rows()
         count = max(1, len(rows))
         cols = 1 if count <= 28 else (2 if count <= 90 else 3)
@@ -2044,6 +2044,82 @@ class DashboardApp:
         footer = 'この画像は現在の素材変換設定を反映しています。'
         fw = draw.textlength(footer, font=id_font)
         draw.text(((width - fw) / 2, height - 32), footer, font=id_font, fill='#8e8e93')
+        return im
+
+    def _render_materials_image(self):
+        rows = self._material_list_rows()
+        if not rows:
+            rows = [{'id': 'barrier', 'name': '建材なし', 'count': 0,
+                     'stacks_text': '0個', 'shulker_text': 'シュルカー 0.00箱分',
+                     'storage_text': '0個 / シュルカー 0.00箱分',
+                     'sources': '', 'changed': 0}]
+
+        cols = 4 if len(rows) >= 4 else max(1, len(rows))
+        width = 1536
+        margin = 42
+        gap = 14
+        header_h = 108
+        card_h = 102
+        row_gap = 14
+        row_count = int(math.ceil(len(rows) / float(cols)))
+        height = header_h + row_count * (card_h + row_gap) + 38
+        im = Image.new('RGB', (width, height), '#111d24')
+        draw = ImageDraw.Draw(im)
+
+        tile = 30
+        for y in range(0, height, tile):
+            for x in range(0, width, tile):
+                fill = '#13242c' if ((x // tile + y // tile) % 2 == 0) else '#102028'
+                draw.rectangle([x, y, x + tile - 1, y + tile - 1], fill=fill)
+        for x in range(0, width, tile * 2):
+            draw.line([(x, 0), (x, height)], fill='#172a33')
+        for y in range(0, height, tile * 2):
+            draw.line([(0, y), (width, y)], fill='#172a33')
+
+        draw.rectangle([4, 4, width - 5, height - 5], outline='#4d6976', width=3)
+        draw.rectangle([12, 12, width - 13, height - 13], outline='#2d4652', width=2)
+
+        title_font = self._ui_font(43, True)
+        name_font = self._ui_font(22, True)
+        count_font = self._ui_font(32, True)
+        small_font = self._ui_font(12, False)
+
+        draw.text((margin, 35), '建材リスト', font=title_font, fill='#f4f7f8')
+        line_y = 88
+        draw.rectangle([margin, line_y, width - margin, line_y + 5], fill='#355564')
+        draw.rectangle([margin, line_y, margin + 116, line_y + 5], fill='#89e07f')
+
+        col_w = int((width - margin * 2 - gap * (cols - 1)) / cols)
+        for idx, row in enumerate(rows):
+            r = idx // cols
+            col = idx % cols
+            x = margin + col * (col_w + gap)
+            y = header_h + r * (card_h + row_gap)
+
+            draw.rounded_rectangle([x + 4, y + 6, x + col_w + 4, y + card_h + 6],
+                                   radius=9, fill='#071016')
+            draw.rounded_rectangle([x, y, x + col_w, y + card_h], radius=9,
+                                   fill='#1b2c34', outline='#4b6674', width=2)
+            draw.rounded_rectangle([x + 2, y + 2, x + col_w - 2, y + card_h - 2],
+                                   radius=7, outline='#263f4b', width=1)
+
+            icon_box = 76
+            ix = x + 12
+            iy = y + 12
+            draw.rectangle([ix, iy, ix + icon_box, iy + icon_box], fill='#102029',
+                           outline='#5a7581', width=2)
+            draw.rectangle([ix + 6, iy + 6, ix + icon_box - 6, iy + icon_box - 6],
+                           outline='#28414d', width=1)
+            icon = icons.render_block_image(row['id'], 62).convert('RGBA')
+            im.paste(icon, (ix + 7, iy + 7), icon)
+
+            tx = ix + icon_box + 14
+            max_text = col_w - (tx - x) - 16
+            self._draw_fit_text(draw, (tx, y + 18), row['name'], name_font, '#eef3f5',
+                                max_text, fallback_font=small_font)
+            count_text = '{:,} 個'.format(int(row['count'] or 0))
+            self._draw_fit_text(draw, (tx, y + 61), count_text, count_font, '#83e47e',
+                                max_text, fallback_font=small_font)
         return im
 
     def export_mapping_csv(self):

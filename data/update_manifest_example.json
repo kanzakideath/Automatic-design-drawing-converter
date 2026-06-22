@@ -1,7 +1,7 @@
 {
-  "version": "1.2.2",
-  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.2.2/SchematicMaterialConverter.exe",
-  "sha256": "8589fed75b7ddfff8cb519ac52f10d696cb78afa46badf024f90feecf92e0dda",
-  "notes": "Use local Minecraft assets for block icons and 3D preview textures when available, with automatic fallback when assets are missing.",
+  "version": "1.2.3",
+  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.2.3/SchematicMaterialConverter.exe",
+  "sha256": "f4c892a484bfd2a601ce8c6f44d5646070bab5d0f5c3a8800fc864867f1da4eb",
+  "notes": "Generate a Minecraft-style dark material list image with four-column cards, block icons, and large item counts.",
   "mandatory": false
 }
