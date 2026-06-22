@@ -6,6 +6,7 @@ import math
 import os
 import random
 import csv
+import ctypes
 import tkinter as tk
 from tkinter import font as tkfont
 from tkinter import filedialog, messagebox, ttk
@@ -27,13 +28,13 @@ import updater
 
 APP_TITLE = '設計図自動素材変換ツール'
 KEEP = '__keep__'
-GPU_PREVIEW_BLOCK_LIMIT = 140000
-GPU_PREVIEW_FACE_LIMIT = 220000
-CPU_PREVIEW_IDLE_BLOCK_LIMIT = 10000
-CPU_PREVIEW_IDLE_FACE_LIMIT = 3200
-CPU_PREVIEW_TEXTURE_FACE_LIMIT = 600
-CPU_PREVIEW_DRAG_BLOCK_LIMIT = 1800
-CPU_PREVIEW_DRAG_FACE_LIMIT = 700
+GPU_PREVIEW_BLOCK_LIMIT = 110000
+GPU_PREVIEW_FACE_LIMIT = 160000
+CPU_PREVIEW_IDLE_BLOCK_LIMIT = 5600
+CPU_PREVIEW_IDLE_FACE_LIMIT = 1800
+CPU_PREVIEW_TEXTURE_FACE_LIMIT = 300
+CPU_PREVIEW_DRAG_BLOCK_LIMIT = 650
+CPU_PREVIEW_DRAG_FACE_LIMIT = 240
 
 CATEGORY_LABELS = [
     ('recommended', 'おすすめ（同じ形）'),
@@ -218,16 +219,19 @@ class InteractivePreview(tk.Canvas):
                          highlightthickness=0, bd=0, relief='flat', cursor='fleur',
                          takefocus=1)
         self.app = app
-        self.yaw = 0.0
-        self.pitch = 0.20
-        self.zoom = 1.70
+        self.yaw = -28.0
+        self.pitch = 0.24
+        self.zoom = 4.4
         self.pan_x = 0.0
         self.pan_y = 0.0
-        self.mode = 'walk'
+        self.mode = 'orbit'
+        self.focus_view = True
         self._photo = None
         self._drag = None
         self._after_id = None
         self._last_render_ms = 0
+        self._last_render_key = None
+        self._last_render_image = None
         self.bind('<Configure>', lambda _e: self.refresh())
         self.bind('<Enter>', self._on_enter)
         self.bind('<ButtonPress-1>', lambda e: self._on_press(e, 'rotate'))
@@ -304,21 +308,23 @@ class InteractivePreview(tk.Canvas):
             self.pitch = max(-0.12, self.pitch - 0.06)
             self.refresh(immediate=True)
         elif key in ('1', 'num_1'):
-            self.set_view(-38.0, 0.34, 1.55)
+            self.set_view(-28.0, 0.24, 4.4)
         elif key in ('2', 'num_2'):
-            self.set_view(0.0, 0.72, 1.35)
+            self.set_view(-38.0, 0.34, 1.55)
         elif key in ('3', 'num_3'):
-            self.set_view(-90.0, 0.22, 1.55)
+            self.set_view(0.0, 0.72, 1.35)
         return 'break'
 
     def set_zoom(self, value):
-        self.zoom = max(0.45, min(3.8, float(value)))
+        self.zoom = max(0.45, min(7.2, float(value)))
 
-    def set_view(self, yaw, pitch, zoom=None):
+    def set_view(self, yaw, pitch, zoom=None, focus=None):
         self.yaw = float(yaw)
         self.pitch = max(-0.12, min(0.88, float(pitch)))
         if zoom is not None:
             self.set_zoom(zoom)
+        if focus is not None:
+            self.focus_view = bool(focus)
         self.pan_x = 0.0
         self.pan_y = 0.0
         self.mode = 'orbit'
@@ -333,12 +339,13 @@ class InteractivePreview(tk.Canvas):
         self.refresh(immediate=True)
 
     def reset_view(self):
-        self.yaw = 0.0
-        self.pitch = 0.20
-        self.zoom = 1.70
+        self.yaw = -28.0
+        self.pitch = 0.24
+        self.zoom = 4.4
         self.pan_x = 0.0
         self.pan_y = 0.0
-        self.mode = 'walk'
+        self.mode = 'orbit'
+        self.focus_view = True
         self.refresh(immediate=True)
 
     def refresh(self, immediate=False):
@@ -351,7 +358,7 @@ class InteractivePreview(tk.Canvas):
         if immediate:
             self._render()
         else:
-            self._after_id = self.after(4 if self._drag else 10, self._render)
+            self._after_id = self.after(8 if self._drag else 18, self._render)
 
     def view_state(self):
         return {
@@ -361,6 +368,7 @@ class InteractivePreview(tk.Canvas):
             'pan_x': self.pan_x,
             'pan_y': self.pan_y,
             'mode': self.mode,
+            'focus_view': self.focus_view,
         }
 
     def _render(self):
@@ -369,19 +377,38 @@ class InteractivePreview(tk.Canvas):
         h = max(150, self.winfo_height())
         try:
             large = w * h >= 260000
+            render_scale = 0.46 if self._drag else (0.68 if large else 0.78)
+            rw = max(220, int(w * render_scale))
+            rh = max(135, int(h * render_scale))
             if self._drag:
-                max_blocks = CPU_PREVIEW_DRAG_BLOCK_LIMIT if large else max(900, int(CPU_PREVIEW_DRAG_BLOCK_LIMIT * 0.55))
-                face_limit = CPU_PREVIEW_DRAG_FACE_LIMIT if large else max(360, int(CPU_PREVIEW_DRAG_FACE_LIMIT * 0.55))
+                max_blocks = CPU_PREVIEW_DRAG_BLOCK_LIMIT if large else max(420, int(CPU_PREVIEW_DRAG_BLOCK_LIMIT * 0.55))
+                face_limit = CPU_PREVIEW_DRAG_FACE_LIMIT if large else max(160, int(CPU_PREVIEW_DRAG_FACE_LIMIT * 0.55))
                 texture_limit = 0
             else:
-                max_blocks = CPU_PREVIEW_IDLE_BLOCK_LIMIT if large else max(5200, int(CPU_PREVIEW_IDLE_BLOCK_LIMIT * 0.65))
-                face_limit = CPU_PREVIEW_IDLE_FACE_LIMIT if large else max(1800, int(CPU_PREVIEW_IDLE_FACE_LIMIT * 0.65))
-                texture_limit = CPU_PREVIEW_TEXTURE_FACE_LIMIT if large else max(300, int(CPU_PREVIEW_TEXTURE_FACE_LIMIT * 0.65))
-            im = self.app._render_schematic_preview(w, h, max_blocks=max_blocks,
-                                                    view=self.view_state(), fast=bool(self._drag),
-                                                    face_limit_override=face_limit,
-                                                    texture_limit=texture_limit,
-                                                    min_face_px=2.2 if not self._drag else 3.0)
+                max_blocks = CPU_PREVIEW_IDLE_BLOCK_LIMIT if large else max(3600, int(CPU_PREVIEW_IDLE_BLOCK_LIMIT * 0.65))
+                face_limit = CPU_PREVIEW_IDLE_FACE_LIMIT if large else max(1200, int(CPU_PREVIEW_IDLE_FACE_LIMIT * 0.65))
+                texture_limit = CPU_PREVIEW_TEXTURE_FACE_LIMIT if large else max(180, int(CPU_PREVIEW_TEXTURE_FACE_LIMIT * 0.65))
+            state = self.view_state()
+            cache_key = None if self._drag else (
+                w, h, rw, rh,
+                round(self.yaw, 2), round(self.pitch, 3), round(self.zoom, 3),
+                round(self.pan_x, 3), round(self.pan_y, 3),
+                self.mode, self.focus_view, self.app._preview_cache_token(),
+            )
+            if cache_key is not None and cache_key == self._last_render_key and self._last_render_image is not None:
+                im = self._last_render_image.copy()
+            else:
+                im = self.app._render_schematic_preview(rw, rh, max_blocks=max_blocks,
+                                                        view=state, fast=bool(self._drag),
+                                                        face_limit_override=face_limit,
+                                                        texture_limit=texture_limit,
+                                                        min_face_px=2.4 if not self._drag else 3.2,
+                                                        focus_view=self.focus_view and not self._drag)
+                if (rw, rh) != (w, h):
+                    im = im.resize((w, h), Image.Resampling.NEAREST)
+                if cache_key is not None:
+                    self._last_render_key = cache_key
+                    self._last_render_image = im.copy()
             self._photo = ImageTk.PhotoImage(im)
             self.delete('all')
             self.create_image(0, 0, image=self._photo, anchor='nw')
@@ -399,16 +426,12 @@ class InteractivePreview(tk.Canvas):
                          font=('Yu Gothic UI', 10, 'bold'))
 
     def _draw_overlay(self, w, h):
-        mode_text = '内部視点' if self.mode == 'walk' else '外観'
+        mode_text = '近景' if self.mode == 'orbit' and self.zoom >= 3.0 else ('内部視点' if self.mode == 'walk' else '全体')
         zoom_text = '%d%%' % int(self.zoom * 100)
         quality = '軽量' if self._drag else '高品質'
-        self.create_rectangle(10, 10, 236, 36, fill='#000000', outline='', stipple='gray50')
+        self.create_rectangle(10, 10, 206, 36, fill='#000000', outline='', stipple='gray50')
         self.create_text(20, 23, text='%s  %s  %s' % (mode_text, zoom_text, quality), anchor='w',
                          fill='#ffffff', font=('Yu Gothic UI', 9, 'bold'))
-        self.create_rectangle(10, h - 32, w - 10, h - 10, fill='#000000', outline='', stipple='gray50')
-        self.create_text(w / 2, h - 21,
-                         text='左ドラッグ: 回転  /  右ドラッグ: 平行移動  /  ホイール: ズーム  /  1-3: 視点',
-                         fill='#ffffff', font=('Yu Gothic UI', 8))
 
 
 def block_category(bid):
@@ -503,6 +526,14 @@ class DashboardApp:
         self.root.after(1800, self.check_for_updates_silent)
 
     # ------------------------------------------------------------------ basics
+    def _preview_cache_token(self):
+        return (
+            id(self.loaded_nbt),
+            self.src_path,
+            icons.minecraft_assets_label(),
+            tuple(sorted((str(k), str(v)) for k, v in self.overrides.items())),
+        )
+
     def get_icon(self, bid, size=34):
         key = (bd.strip_ns(bid), size)
         if key not in self.icon_cache:
@@ -557,18 +588,51 @@ class DashboardApp:
             pass
 
     def _set_centered_geometry(self, window, width, height):
-        sw = max(1, window.winfo_screenwidth())
-        sh = max(1, window.winfo_screenheight())
-        x = max(0, int((sw - width) / 2))
-        y = max(0, int((sh - height) / 2))
+        mx, my, mw, mh = self._current_monitor_work_area(window)
+        width = min(int(width), max(1024, mw - 80))
+        height = min(int(height), max(720, mh - 90))
+        x = mx + max(0, int((mw - width) / 2))
+        y = my + max(0, int((mh - height) / 2))
         window.geometry('%dx%d+%d+%d' % (width, height, x, y))
+        return width, height
+
+    def _current_monitor_work_area(self, window):
+        if os.name == 'nt':
+            try:
+                class POINT(ctypes.Structure):
+                    _fields_ = [('x', ctypes.c_long), ('y', ctypes.c_long)]
+
+                class RECT(ctypes.Structure):
+                    _fields_ = [('left', ctypes.c_long), ('top', ctypes.c_long),
+                                ('right', ctypes.c_long), ('bottom', ctypes.c_long)]
+
+                class MONITORINFO(ctypes.Structure):
+                    _fields_ = [('cbSize', ctypes.c_ulong), ('rcMonitor', RECT),
+                                ('rcWork', RECT), ('dwFlags', ctypes.c_ulong)]
+
+                user32 = ctypes.windll.user32
+                pt = POINT()
+                user32.GetCursorPos(ctypes.byref(pt))
+                monitor = user32.MonitorFromPoint(pt, 2)
+                info = MONITORINFO()
+                info.cbSize = ctypes.sizeof(MONITORINFO)
+                if monitor and user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+                    rect = info.rcWork
+                    return rect.left, rect.top, max(1, rect.right - rect.left), max(1, rect.bottom - rect.top)
+            except Exception:
+                pass
+        try:
+            return (window.winfo_vrootx(), window.winfo_vrooty(),
+                    max(1, window.winfo_vrootwidth()), max(1, window.winfo_vrootheight()))
+        except Exception:
+            return 0, 0, max(1, window.winfo_screenwidth()), max(1, window.winfo_screenheight())
 
     # --------------------------------------------------------------------- ui
     def _build_ui(self):
         self.root.title(APP_TITLE)
         self.root.configure(bg=UI['BG'])
-        self._set_centered_geometry(self.root, 1600, 940)
-        self.root.minsize(1320, 820)
+        win_w, win_h = self._set_centered_geometry(self.root, 1600, 940)
+        self.root.minsize(min(1180, win_w), min(760, win_h))
         self.root.grid_rowconfigure(1, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
         self._configure_style()
@@ -1347,9 +1411,9 @@ class DashboardApp:
 
         controls = tk.Frame(panel, bg=UI['PANEL'])
         controls.grid(row=2, column=0, sticky='ew', padx=12, pady=(0, 8))
-        self._button(controls, '外観', lambda: self._set_preview_mode('orbit'),
+        self._button(controls, '近景', self._reset_preview_view,
                      bg=UI['BTN_BG_2'], size=8, padx=12, pady=5).pack(side='left', padx=(0, 6))
-        self._button(controls, '内部視点', lambda: self._set_preview_mode('walk'),
+        self._button(controls, '全体', lambda: self._preview_set_view(-38.0, 0.34, 1.55, False),
                      bg=UI['BTN_BG_2'], size=8, padx=12, pady=5).pack(side='left', padx=(0, 6))
         self._button(controls, 'リセット', self._reset_preview_view,
                      bg=UI['BTN_BG'], size=8, padx=12, pady=5).pack(side='left')
@@ -1359,10 +1423,10 @@ class DashboardApp:
         viewbar = tk.Frame(panel, bg=UI['PANEL'])
         viewbar.grid(row=3, column=0, sticky='ew', padx=12, pady=(0, 8))
         for label, args in [
-            ('俯瞰', (-38.0, 0.34, 1.55)),
-            ('上から', (0.0, 0.72, 1.35)),
-            ('正面', (0.0, 0.16, 1.65)),
-            ('横', (-90.0, 0.20, 1.65)),
+            ('近景', (-28.0, 0.24, 4.4, True)),
+            ('俯瞰', (-38.0, 0.34, 1.55, False)),
+            ('上から', (0.0, 0.72, 1.35, False)),
+            ('横', (-90.0, 0.20, 2.8, True)),
         ]:
             self._button(viewbar, label, lambda a=args: self._preview_set_view(*a),
                          bg=UI['BTN_BG'], size=8, padx=10, pady=4).pack(side='left', padx=(0, 6))
@@ -1775,9 +1839,9 @@ class DashboardApp:
                 self.preview_view.pan_y = 0.0
             self.preview_view.refresh(immediate=True)
 
-    def _preview_set_view(self, yaw, pitch, zoom):
+    def _preview_set_view(self, yaw, pitch, zoom, focus=None):
         if hasattr(self, 'preview_view'):
-            self.preview_view.set_view(yaw, pitch, zoom)
+            self.preview_view.set_view(yaw, pitch, zoom, focus=focus)
 
     def _preview_zoom(self, factor):
         if hasattr(self, 'preview_view'):
@@ -2434,9 +2498,11 @@ class DashboardApp:
             'width': 1280,
             'height': 760,
             'startup_timeout': 4.5,
-            'initial_mode': 'walk',
-            'initial_yaw': 0.0,
-            'initial_pitch': 8.0,
+            'target_fps': 240,
+            'initial_mode': 'orbit',
+            'initial_yaw': -28.0,
+            'initial_pitch': 18.0,
+            'initial_zoom': 4.4,
         }
 
     def _gpu_texture_atlas(self, records):
@@ -2545,13 +2611,18 @@ class DashboardApp:
         return img
 
     def _render_schematic_preview(self, w, h, max_blocks=80000, view=None, fast=False,
-                                  face_limit_override=None, texture_limit=None, min_face_px=0.0):
+                                  face_limit_override=None, texture_limit=None, min_face_px=0.0,
+                                  focus_view=False):
         if fast:
             max_blocks = min(max_blocks, 7000)
         im = Image.new('RGB', (w, h), '#87c9ff')
         d = ImageDraw.Draw(im)
         records = self._render_records(max_blocks=max_blocks)
-        occupied = self._source_occupied_positions()
+        if focus_view:
+            records = self._focused_preview_records(records)
+            occupied = set((int(rec[0]), int(rec[1]), int(rec[2])) for rec in records)
+        else:
+            occupied = self._source_occupied_positions()
         bounds = self._record_bounds(records)
         camera = self._minecraft_camera(bounds, w, h, view=view)
         self._draw_minecraft_sky(d, w, h)
@@ -2587,6 +2658,35 @@ class DashboardApp:
     def _face_screen_size(self, poly):
         return max(max(p[0] for p in poly) - min(p[0] for p in poly),
                    max(p[1] for p in poly) - min(p[1] for p in poly))
+
+    def _focused_preview_records(self, records):
+        if not records:
+            return records
+        bounds = self._record_bounds(records)
+        span = max(bounds['span_x'], bounds['span_z'])
+        if span <= 48:
+            return records
+        cell = max(8, min(24, int(span / 10)))
+        buckets = {}
+        for rec in records:
+            x, _y, z = rec[:3]
+            key = (int(math.floor(float(x) / cell)), int(math.floor(float(z) / cell)))
+            buckets[key] = buckets.get(key, 0) + 1
+        if not buckets:
+            return records
+        bx, bz = max(buckets.items(), key=lambda item: item[1])[0]
+        cx = (bx + 0.5) * cell
+        cz = (bz + 0.5) * cell
+        radius = max(18.0, min(38.0, span / 5.0))
+        focused = [rec for rec in records
+                   if abs((float(rec[0]) + 0.5) - cx) <= radius
+                   and abs((float(rec[2]) + 0.5) - cz) <= radius]
+        if len(focused) < 80:
+            radius *= 1.8
+            focused = [rec for rec in records
+                       if abs((float(rec[0]) + 0.5) - cx) <= radius
+                       and abs((float(rec[2]) + 0.5) - cz) <= radius]
+        return focused if len(focused) >= 80 else records
 
     def _record_bounds(self, records):
         if not records:

@@ -18,7 +18,7 @@ import urllib.error
 import urllib.request
 
 
-APP_VERSION = "1.3.4"
+APP_VERSION = "1.3.5"
 MANIFEST_URL_FILE = "update_manifest_url.txt"
 DEFAULT_UPDATE_SOURCE = "https://api.github.com/repos/kanzakideath/Automatic-design-drawing-converter/releases/latest"
 GITHUB_REPO_RE = re.compile(r"^https://github\.com/([^/]+)/([^/#?]+?)(?:\.git)?/?(?:[#?].*)?$", re.I)

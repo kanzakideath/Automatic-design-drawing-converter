@@ -87,6 +87,7 @@ def _run_preview(payload, status_q=None):
     import pyglet
 
     pyglet.options['debug_gl'] = False
+    pyglet.options['vsync'] = False
     from pyglet import gl
 
     try:
@@ -99,7 +100,8 @@ def _run_preview(payload, status_q=None):
             status_q.put_nowait(('ok', ''))
         except queue.Full:
             pass
-    pyglet.clock.schedule_interval(window.update, 1.0 / 240.0)
+    target_fps = max(60.0, min(360.0, float(payload.get('target_fps', 240.0) or 240.0)))
+    pyglet.clock.schedule_interval(window.update, 1.0 / target_fps)
     pyglet.app.run(interval=0)
 
 
@@ -332,10 +334,14 @@ class GpuPreviewWindow:
         self.stride = 1
         self.keys = set()
         self.mouse_down = False
-        self.mode = str(payload.get('initial_mode') or 'orbit')
-        self.yaw = float(payload.get('initial_yaw', -42.0))
-        self.pitch = float(payload.get('initial_pitch', 26.0))
-        self.zoom = float(payload.get('initial_zoom', 1.0))
+        self.default_mode = str(payload.get('initial_mode') or 'orbit')
+        self.default_yaw = float(payload.get('initial_yaw', -42.0))
+        self.default_pitch = float(payload.get('initial_pitch', 26.0))
+        self.default_zoom = float(payload.get('initial_zoom', 1.0))
+        self.mode = self.default_mode
+        self.yaw = self.default_yaw
+        self.pitch = self.default_pitch
+        self.zoom = self.default_zoom
         self.fps = 0.0
         self._fps_accum = 0.0
         self._fps_frames = 0
@@ -351,6 +357,10 @@ class GpuPreviewWindow:
         if config is not None:
             kwargs['config'] = config
         self.window = pyglet.window.Window(**kwargs)
+        try:
+            self.window.set_vsync(False)
+        except Exception:
+            pass
         self.window.push_handlers(self)
         self.window.set_minimum_size(860, 520)
 
@@ -370,6 +380,10 @@ class GpuPreviewWindow:
         gl.glFrontFace(gl.GL_CCW)
         try:
             gl.glDisable(gl.GL_MULTISAMPLE)
+        except Exception:
+            pass
+        try:
+            gl.glDisable(gl.GL_DITHER)
         except Exception:
             pass
         self._update_overlay_text()
@@ -521,9 +535,9 @@ class GpuPreviewWindow:
             self._overlay_dirty = True
         if self.mode != 'walk':
             return
-        speed = max(3.5, max(float(self.bounds.get('span_x', 32.0)),
-                             float(self.bounds.get('span_z', 32.0))) * 0.55)
-        move = speed * dt * (3.0 if self._key('LSHIFT') or self._key('RSHIFT') else 1.0)
+        span = max(float(self.bounds.get('span_x', 32.0)), float(self.bounds.get('span_z', 32.0)))
+        speed = max(3.5, min(24.0, span * 0.12))
+        move = speed * dt * (2.0 if self._key('LSHIFT') or self._key('RSHIFT') else 1.0)
         yaw = math.radians(self.yaw)
         forward = (math.sin(yaw), 0.0, math.cos(yaw))
         right = (math.cos(yaw), 0.0, -math.sin(yaw))
@@ -566,9 +580,7 @@ class GpuPreviewWindow:
         mode = '内部視点' if self.mode == 'walk' else '外観'
         downsample = ' / 速度優先LOD %d' % self.stride if self.stride > 1 else ''
         self.label.text = (
-            '%s | %s | %.0f fps | 面 %s%s\n'
-            '左ドラッグ: 回転/視点移動   右ドラッグ/Shift+左: 平行移動   ホイール: ズーム   '
-            'F: 内部視点   1/2/3: 視点切替   R: リセット   Esc: 閉じる'
+            '%s | %s | %.0f fps | 面 %s%s'
             % (title, mode, self.fps, f'{self.face_emitted:,}/{self.face_total:,}', downsample)
         )
 
@@ -600,10 +612,10 @@ class GpuPreviewWindow:
         if symbol == key.ESCAPE:
             self.close()
         elif symbol == key.R:
-            self.yaw = -42.0
-            self.pitch = 26.0
-            self.zoom = 1.0
-            self.mode = 'orbit'
+            self.yaw = self.default_yaw
+            self.pitch = self.default_pitch
+            self.zoom = self.default_zoom
+            self.mode = self.default_mode
             self._reset_camera()
             self._overlay_dirty = True
         elif symbol == key.F:

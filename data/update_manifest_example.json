@@ -1,7 +1,7 @@
 {
-  "version": "1.3.4",
-  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.3.4/SchematicMaterialConverter.exe",
-  "sha256": "0fb28c52cc44ba3f780e2568958dfaa8f02f992ac602908c41e64878a3d69d7a",
-  "notes": "Render previews with actual per-face Minecraft textures, restore textured right-side preview rendering, start previews from a closer Minecraft-like viewpoint, and filter tiny distant faces that looked like particles.",
+  "version": "1.3.5",
+  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.3.5/SchematicMaterialConverter.exe",
+  "sha256": "b1840eb0b20166bf540c370701adf594b006c3f6186ecf20ddcf6760550f49fb",
+  "notes": "Boost preview responsiveness with lower-latency right-side LOD rendering, cached still previews, a lighter GPU face budget for high-FPS inspection, explicit 240 FPS GPU scheduling, and stronger VSync-off OpenGL settings.",
   "mandatory": false
 }
