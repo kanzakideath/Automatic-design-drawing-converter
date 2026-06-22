@@ -5,6 +5,7 @@ import json
 import math
 import os
 import random
+import csv
 import tkinter as tk
 from tkinter import font as tkfont
 from tkinter import filedialog, messagebox, ttk
@@ -1467,11 +1468,11 @@ class DashboardApp:
                            'decoration', 'natural', 'plant', 'redstone')
 
     def _top_materials(self):
-        rows = sorted(self._all_records(), key=lambda c: c.count, reverse=True)[:8]
+        rows = self._material_list_rows()[:8]
         if not rows:
             return [('素材', '読み込み待ち')]
-        return [(bd.jp_name(c.source), '×%d  →  %s' % (
-            c.count, '保持' if self._target_for(c) == KEEP else bd.jp_name(self._target_for(c)))) for c in rows]
+        return [(r['name'], 'x%s / %s / %s' % (
+            '{:,}'.format(r['count']), r['stacks_text'], r['shulker_text'])) for r in rows]
 
     # ---------------------------------------------------------------- rows
     def _filter_chip(self, parent, key, label, count):
@@ -1896,11 +1897,49 @@ class DashboardApp:
                 'id': bid,
                 'name': bd.jp_name(bid),
                 'count': data['count'],
+                'stacks_text': self._stack_text(data['count']),
+                'shulker_text': self._shulker_text(data['count']),
+                'storage_text': self._storage_text(data['count']),
                 'sources': detail,
                 'changed': data['changed'],
             })
         rows.sort(key=lambda r: (-r['count'], r['name'], r['id']))
         return rows
+
+    def _stack_parts(self, count):
+        count = max(0, int(count or 0))
+        return count // 64, count % 64
+
+    def _shulker_parts(self, count):
+        count = max(0, int(count or 0))
+        return count // 1728, count % 1728
+
+    def _stack_text(self, count):
+        stacks, rest = self._stack_parts(count)
+        if stacks == 0:
+            return '%d個' % rest
+        if rest:
+            return '%dスタック + %d個' % (stacks, rest)
+        return '%dスタック' % stacks
+
+    def _shulker_text(self, count):
+        count = max(0, int(count or 0))
+        boxes, rest = self._shulker_parts(count)
+        rest_stacks, rest_items = self._stack_parts(rest)
+        if boxes == 0:
+            if count and count / 1728.0 < 0.01:
+                return 'シュルカー <0.01箱分'
+            return 'シュルカー %.2f箱分' % (count / 1728.0)
+        if rest == 0:
+            return 'シュルカー %d箱' % boxes
+        if rest_items:
+            if rest_stacks == 0:
+                return 'シュルカー %d箱 + %d個' % (boxes, rest_items)
+            return 'シュルカー %d箱 + %dスタック + %d個' % (boxes, rest_stacks, rest_items)
+        return 'シュルカー %d箱 + %dスタック' % (boxes, rest_stacks)
+
+    def _storage_text(self, count):
+        return '%s / %s' % (self._stack_text(count), self._shulker_text(count))
 
     def _ui_font(self, size, bold=False):
         candidates = [
@@ -1938,7 +1977,7 @@ class DashboardApp:
         margin = 42
         gap = 24
         header_h = 150
-        row_h = 76 if cols < 3 else 62
+        row_h = 92 if cols < 3 else 74
         rows_per_col = int(math.ceil(count / float(cols)))
         height = header_h + rows_per_col * row_h + 46
         im = Image.new('RGB', (width, height), '#f2f2f7')
@@ -1957,7 +1996,9 @@ class DashboardApp:
         draw.text((margin, 38), title, font=title_font, fill='#000000')
         draw.text((margin, 84), subtitle, font=sub_font, fill='#6e6e73')
         total_blocks = sum(r['count'] for r in rows)
-        summary = '%d種類  /  合計 %s ブロック' % (len(rows), '{:,}'.format(total_blocks))
+        summary = '%d種類 / 合計 %s個 / %s / %s' % (
+            len(rows), '{:,}'.format(total_blocks),
+            self._stack_text(total_blocks), self._shulker_text(total_blocks))
         tw = draw.textlength(summary, font=head_font)
         draw.rounded_rectangle([width - margin - tw - 34, 46, width - margin, 82], radius=18, fill='#e8f2ff')
         draw.text((width - margin - tw - 17, 54), summary, font=head_font, fill='#007aff')
@@ -1976,7 +2017,7 @@ class DashboardApp:
             icon = icons.render_block_image(row['id'], icon_size).convert('RGBA')
             im.paste(icon, (x + 14, y + int((row_h - icon_size - 8) / 2)), icon)
             tx = x + 14 + icon_size + 12
-            right_w = 88 if cols < 3 else 70
+            right_w = 230 if cols == 1 else (170 if cols == 2 else 112)
             max_text = col_w - (tx - x) - right_w - 12
             self._draw_fit_text(draw, (tx, y + 13), row['name'], name_font, '#1c1c1e', max_text)
             self._draw_fit_text(draw, (tx, y + 39 if cols < 3 else y + 34), row['id'],
@@ -1989,8 +2030,13 @@ class DashboardApp:
                                     detail_font, '#8e8e93', max_text)
             count_text = 'x%s' % '{:,}'.format(row['count'])
             cw = draw.textlength(count_text, font=count_font)
-            draw.text((x + col_w - cw - 16, y + 22 if cols < 3 else y + 18),
+            draw.text((x + col_w - cw - 16, y + 15 if cols < 3 else y + 12),
                       count_text, font=count_font, fill='#000000')
+            sx = x + col_w - right_w - 16
+            self._draw_fit_text(draw, (sx, y + 42 if cols < 3 else y + 36), row['stacks_text'],
+                                detail_font, '#007aff', right_w)
+            self._draw_fit_text(draw, (sx, y + 60 if cols < 3 else y + 52), row['shulker_text'],
+                                detail_font, '#6e6e73', right_w)
         footer = 'この画像は現在の素材変換設定を反映しています。'
         fw = draw.textlength(footer, font=id_font)
         draw.text(((width - fw) / 2, height - 32), footer, font=id_font, fill='#8e8e93')
@@ -2007,11 +2053,25 @@ class DashboardApp:
         if not out:
             return
         with open(out, 'w', encoding='utf-8-sig') as f:
-            f.write('source,target,count,status\n')
+            writer = csv.writer(f)
+            writer.writerow([
+                'source', 'target', 'count', 'status',
+                'stacks_64', 'stack_text',
+                'shulker_boxes_27stacks', 'shulker_text',
+            ])
             for conv in self._all_records():
                 tgt = self._target_for(conv)
                 status = 'keep' if tgt == KEEP else ('same' if tgt == bd.strip_ns(conv.source) else 'replace')
-                f.write('%s,%s,%s,%s\n' % (conv.source, '' if tgt == KEEP else tgt, conv.count, status))
+                writer.writerow([
+                    conv.source,
+                    '' if tgt == KEEP else tgt,
+                    conv.count,
+                    status,
+                    '%.2f' % (int(conv.count or 0) / 64.0),
+                    self._stack_text(conv.count),
+                    '%.3f' % (int(conv.count or 0) / 1728.0),
+                    self._shulker_text(conv.count),
+                ])
         messagebox.showinfo(APP_TITLE, 'エクスポートしました:\n%s' % out)
 
     def do_convert(self):

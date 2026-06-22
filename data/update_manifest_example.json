@@ -1,7 +1,7 @@
 {
-  "version": "1.2.0",
-  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.2.0/SchematicMaterialConverter.exe",
+  "version": "1.2.1",
+  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.2.1/SchematicMaterialConverter.exe",
   "sha256": "",
-  "notes": "Interactive 3D preview, faster live material preview, iOS-style UI refresh.",
+  "notes": "Show stack and shulker-box estimates in material lists, PNG export, and CSV export.",
   "mandatory": false
 }
