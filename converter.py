@@ -62,9 +62,9 @@ def _region_palette_counts(reg):
     counts = [0] * len(palette)
     states = reg.get('BlockStates', [])
     size = _vec3(reg.get('Size'))
-    if not palette:
+    if len(palette) == 0:
         return []
-    if not states or not size:
+    if len(states) == 0 or not size:
         return [(str(entry['Name']), 1) for entry in palette]
     sx, sy, sz = abs(int(size[0])), abs(int(size[1])), abs(int(size[2]))
     total = sx * sy * sz

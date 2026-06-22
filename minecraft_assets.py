@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Runtime access to a local Minecraft assets directory.
+"""Runtime access to Minecraft asset directories.
 
-The executable does not bundle Mojang textures.  When a normal installed
-Minecraft assets tree exists on the user's PC, this module reads models,
-blockstates, lang files, and textures from that local copy.
+The app first looks for an optional assets tree bundled under the app's data
+directory, then falls back to an explicitly configured or locally installed
+Minecraft assets tree.  Public builds should not redistribute third-party
+textures unless the pack license allows it.
 """
 
 from __future__ import annotations
@@ -75,6 +76,27 @@ def _config_roots():
         yield str(DEFAULT_LOCAL_ROOT)
 
 
+def _embedded_roots():
+    bases = []
+    for base in (_data_dir(), _app_dir() / "data", _app_dir()):
+        try:
+            p = base.resolve()
+        except Exception:
+            p = base
+        if p not in bases:
+            bases.append(p)
+    rels = (
+        Path("minecraft_assets") / "minecraft",
+        Path("minecraft_assets"),
+        Path("embedded_minecraft_assets") / "minecraft",
+        Path("embedded_minecraft_assets"),
+        Path("assets") / "minecraft",
+    )
+    for base in bases:
+        for rel in rels:
+            yield base / rel
+
+
 def _auto_roots():
     appdata = os.environ.get("APPDATA")
     if not appdata:
@@ -93,7 +115,7 @@ def assets_root() -> Path | None:
     global _ROOT_CACHE
     if _ROOT_CACHE is not None:
         return _ROOT_CACHE
-    for candidate in list(_config_roots()) + list(_auto_roots() or []):
+    for candidate in list(_embedded_roots()) + list(_config_roots()) + list(_auto_roots() or []):
         root = _valid_root(candidate)
         if root:
             _ROOT_CACHE = root

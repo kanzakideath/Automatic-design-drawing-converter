@@ -61,6 +61,7 @@ UI = {
     'HOVER': '#3a3a3c', 'CARD': '#1c1c1e', 'BADGE_BG': '#2c2c2e',
     'BADGE_FG': '#d7e7ff', 'NBADGE_BG': '#2c2c2e', 'NBADGE_FG': '#c7c7cc',
 }
+UI_FONT_BOOST = 1
 
 
 def _hex_to_rgb(value):
@@ -93,7 +94,7 @@ class RoundedButton(tk.Canvas):
         self.hover_fill = active_bg or _mix_hex(self.fill, '#ffffff', 0.10)
         self.fg = fg or UI['TEXT']
         self.state = state
-        self.font = ('Yu Gothic UI', size, weight)
+        self.font = ('Yu Gothic UI', size + UI_FONT_BOOST, weight)
         self.tk_font = tkfont.Font(font=self.font)
         self.padx = padx
         self.pady = pady
@@ -211,16 +212,17 @@ class InteractivePreview(tk.Canvas):
         self.app = app
         self.yaw = -38.0
         self.pitch = 0.34
-        self.zoom = 1.0
+        self.zoom = 1.18
         self.mode = 'orbit'
         self._photo = None
         self._drag = None
         self._after_id = None
+        self._last_render_ms = 0
         self.bind('<Configure>', lambda _e: self.refresh())
         self.bind('<Enter>', self._on_enter)
         self.bind('<ButtonPress-1>', self._on_press)
         self.bind('<B1-Motion>', self._on_drag)
-        self.bind('<ButtonRelease-1>', lambda _e: setattr(self, '_drag', None))
+        self.bind('<ButtonRelease-1>', self._on_release)
         self.bind('<MouseWheel>', self._on_wheel)
         self.bind('<Double-Button-1>', self.toggle_mode)
         self._draw_loading(width, height)
@@ -241,10 +243,14 @@ class InteractivePreview(tk.Canvas):
         self.pitch = max(-0.12, min(0.88, pitch0 + (y0 - event.y) * 0.004))
         self.refresh()
 
+    def _on_release(self, _event):
+        self._drag = None
+        self.refresh(immediate=True)
+
     def _on_wheel(self, event):
         factor = 1.12 if event.delta > 0 else 0.89
         self.zoom = max(0.45, min(3.4, self.zoom * factor))
-        self.refresh()
+        self.refresh(immediate=True)
         return 'break'
 
     def toggle_mode(self, _event=None):
@@ -255,7 +261,7 @@ class InteractivePreview(tk.Canvas):
     def reset_view(self):
         self.yaw = -38.0
         self.pitch = 0.34
-        self.zoom = 1.0
+        self.zoom = 1.18
         self.mode = 'orbit'
         self.refresh(immediate=True)
 
@@ -269,7 +275,7 @@ class InteractivePreview(tk.Canvas):
         if immediate:
             self._render()
         else:
-            self._after_id = self.after(8, self._render)
+            self._after_id = self.after(4 if self._drag else 10, self._render)
 
     def view_state(self):
         return {
@@ -284,9 +290,10 @@ class InteractivePreview(tk.Canvas):
         w = max(260, self.winfo_width())
         h = max(150, self.winfo_height())
         try:
-            max_blocks = 520 if self._drag else 980
+            large = w * h >= 260000
+            max_blocks = (560 if large else 360) if self._drag else (2400 if large else 1400)
             im = self.app._render_schematic_preview(w, h, max_blocks=max_blocks,
-                                                    view=self.view_state(), fast=True)
+                                                    view=self.view_state(), fast=bool(self._drag))
             self._photo = ImageTk.PhotoImage(im)
             self.delete('all')
             self.create_image(0, 0, image=self._photo, anchor='nw')
@@ -306,8 +313,9 @@ class InteractivePreview(tk.Canvas):
     def _draw_overlay(self, w, h):
         mode_text = '内部視点' if self.mode == 'walk' else '外観'
         zoom_text = '%d%%' % int(self.zoom * 100)
-        self.create_rectangle(10, 10, 156, 36, fill='#000000', outline='', stipple='gray50')
-        self.create_text(20, 23, text='%s  %s' % (mode_text, zoom_text), anchor='w',
+        quality = '軽量' if self._drag else '高品質'
+        self.create_rectangle(10, 10, 196, 36, fill='#000000', outline='', stipple='gray50')
+        self.create_text(20, 23, text='%s  %s  %s' % (mode_text, zoom_text, quality), anchor='w',
                          fill='#ffffff', font=('Yu Gothic UI', 9, 'bold'))
         self.create_rectangle(10, h - 32, w - 10, h - 10, fill='#000000', outline='', stipple='gray50')
         self.create_text(w / 2, h - 21, text='ドラッグで回転  /  ホイールでズーム  /  ダブルクリックで視点切替',
@@ -437,7 +445,7 @@ class DashboardApp:
 
     def _label(self, parent, text, size=10, weight='normal', fg=None, bg=None, **kw):
         return tk.Label(parent, text=text, bg=bg or parent.cget('bg'), fg=fg or UI['TEXT'],
-                        font=('Yu Gothic UI', size, weight), **kw)
+                        font=('Yu Gothic UI', size + UI_FONT_BOOST, weight), **kw)
 
     def _button(self, parent, text, command=None, bg=None, fg=None, size=9, weight='bold',
                 padx=10, pady=5, state='normal', **kw):
@@ -470,8 +478,8 @@ class DashboardApp:
     def _build_ui(self):
         self.root.title(APP_TITLE)
         self.root.configure(bg=UI['BG'])
-        self._set_centered_geometry(self.root, 1280, 720)
-        self.root.minsize(1100, 660)
+        self._set_centered_geometry(self.root, 1440, 840)
+        self.root.minsize(1280, 760)
         self.root.grid_rowconfigure(1, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
         self._configure_style()
@@ -661,15 +669,18 @@ class DashboardApp:
             self._button(row, '実行', cmd, bg='#28215a', padx=12, pady=5).pack(side='right', padx=10)
 
     def open_full_preview(self):
-        top, body = self._dialog('Minecraft風プレビュー', 980, 640)
+        top, body = self._dialog('Minecraft風プレビュー', 1180, 760)
         body.grid_rowconfigure(0, weight=1)
         body.grid_columnconfigure(0, weight=1)
-        img = self._result_preview_image(900, 470)
-        prev = tk.Label(body, image=img, bg=UI['PANEL'], highlightthickness=1, highlightbackground=UI['BORDER_HI'])
-        prev.image = img
+        prev = InteractivePreview(body, self, width=1080, height=600)
         prev.grid(row=0, column=0, sticky='nsew')
         row = tk.Frame(body, bg=UI['BG'])
         row.grid(row=1, column=0, sticky='ew', pady=(12, 0))
+        self._button(row, '外観', lambda: setattr(prev, 'mode', 'orbit') or prev.refresh(immediate=True),
+                     bg=UI['BTN_BG_2']).pack(side='left', padx=(0, 8))
+        self._button(row, '内部視点', lambda: setattr(prev, 'mode', 'walk') or prev.refresh(immediate=True),
+                     bg=UI['BTN_BG_2']).pack(side='left', padx=(0, 8))
+        self._button(row, 'リセット', prev.reset_view, bg=UI['BTN_BG']).pack(side='left', padx=(0, 8))
         self._button(row, 'PNGとして保存', self.export_preview, bg=UI['ACCENT']).pack(side='left', padx=(0, 8))
         self._button(row, '建材リストPNG', self.export_materials_image, bg=UI['ACCENT']).pack(side='left', padx=(0, 8))
         self._button(row, 'CSVを書き出し', self.export_mapping_csv, bg=UI['BTN_BG_2']).pack(side='left', padx=(0, 8))
@@ -723,6 +734,10 @@ class DashboardApp:
         self._label(body, '表示', size=10, weight='bold', bg=UI['BG']).pack(anchor='w', pady=(18, 6))
         self._button(body, 'フォーカス表示を切り替え', self.toggle_focus_mode, bg=UI['BTN_BG_2']).pack(anchor='w')
         self._button(body, 'プレビューキャッシュをクリア', self.clear_preview_cache,
+                     bg=UI['BTN_BG_2']).pack(anchor='w', pady=(8, 0))
+        self._button(body, '素材変換ルールを開く', self.open_rule_manager,
+                     bg=UI['BTN_BG_2']).pack(anchor='w', pady=(8, 0))
+        self._button(body, '大きいプレビューで確認', self.open_full_preview,
                      bg=UI['BTN_BG_2']).pack(anchor='w', pady=(8, 0))
         assets_label = icons.minecraft_assets_label()
         texture_status = 'Minecraftテクスチャ: ' + (assets_label if assets_label else '未検出（内蔵の軽量表示を使用）')
@@ -1024,7 +1039,7 @@ class DashboardApp:
             steps.grid_columnconfigure(i, weight=1)
         current = 1 if self.loaded_nbt is None else (3 if self.last_output else 2)
         self._step_card(steps, 0, 1, '設計図読み込み', 'ファイルを読み込み、ブロックを解析', current >= 1, current == 1)
-        self._step_card(steps, 1, 2, '素材変換ルール設定', 'ブロックの置き換えルールを設定', current >= 2, current == 2)
+        self._step_card(steps, 1, 2, 'プレビューで確認', '変換後の見た目を大きい画面で確認', current >= 2, current == 2)
         self._step_card(steps, 2, 3, '出力・適用', '結果を出力してプロジェクトに適用', current >= 3, current == 3)
 
     def _step_card(self, parent, col, no, title, desc, done, active):
@@ -1043,7 +1058,7 @@ class DashboardApp:
         self._label(f, desc, size=8, fg=UI['MUTED'], bg=bg).grid(row=1, column=1, sticky='nw')
         if done:
             self._label(f, '✓', size=14, fg=UI['GREEN'], bg=bg).grid(row=0, column=2, rowspan=2, padx=12)
-        command = self.choose_file if no == 1 else (self.open_rule_manager if no == 2 else self.do_convert)
+        command = self.choose_file if no == 1 else (self.open_full_preview if no == 2 else self.do_convert)
         for widget in (f,) + tuple(f.winfo_children()):
             widget.bind('<Button-1>', lambda _e, cmd=command: cmd())
 
@@ -1215,6 +1230,8 @@ class DashboardApp:
                      bg=UI['BTN_BG_2'], size=8, padx=12, pady=5).pack(side='left', padx=(0, 6))
         self._button(controls, 'リセット', self._reset_preview_view,
                      bg=UI['BTN_BG'], size=8, padx=12, pady=5).pack(side='left')
+        self._button(controls, '大きく表示', self.open_full_preview,
+                     bg=UI['ACCENT'], size=8, padx=12, pady=5).pack(side='right')
 
         tabs = tk.Frame(panel, bg=UI['PANEL'])
         tabs.grid(row=3, column=0, sticky='ew', padx=12, pady=(0, 8))
@@ -2199,8 +2216,12 @@ class DashboardApp:
                 continue
             mapping[conv.source] = tgt
         if not mapping:
-            messagebox.showinfo(APP_TITLE, '変換する素材がありません。')
-            return
+            if not messagebox.askyesno(
+                    APP_TITLE,
+                    '変換する素材が未設定です。\n\n'
+                    '置き換えは行わず、読み込んだ設計図を別名で保存しますか？\n'
+                    '素材を変える場合は、中央の一覧で置き換え先を選ぶか「自動マッピング」を押してください。'):
+                return
         default_out = converter.default_output_path(self.src_path)
         out = filedialog.asksaveasfilename(
             title='変換後のファイルの保存先', initialdir=os.path.dirname(default_out),
@@ -2225,7 +2246,7 @@ class DashboardApp:
         self._refresh_layout()
         if messagebox.askyesno(
                 APP_TITLE,
-                '変換が完了しました。\n\n置き換えた素材: %d 種類\n書き換えたパレット: %d 件\n出力ファイル:\n%s\n\n'
+                '出力が完了しました。\n\n置き換えた素材: %d 種類\n書き換えたパレット: %d 件\n出力ファイル:\n%s\n\n'
                 'フォルダを開きますか？' % (len(mapping), changed, out)):
             try:
                 os.startfile(os.path.dirname(out))
@@ -2269,6 +2290,9 @@ class DashboardApp:
 
         self._draw_build_shadow(d, records, camera, w, h, fast=fast)
         faces = self._visible_block_faces(records, camera)
+        face_limit = 900 if fast else (3600 if w * h >= 260000 else 2400)
+        if len(faces) > face_limit:
+            faces = faces[-face_limit:]
         for depth, poly, bid, normal, seed in faces:
             self._draw_minecraft_face(im, d, poly, self._block_rgb(bid), normal, seed, bid,
                                       textured=not fast)
@@ -2299,7 +2323,7 @@ class DashboardApp:
         view = view or {}
         span = max(bounds['span_x'], bounds['span_z'])
         height = bounds['span_y']
-        zoom = max(0.45, min(3.4, float(view.get('zoom', 1.0) or 1.0)))
+        zoom = max(0.45, min(3.4, float(view.get('zoom', 1.18) or 1.18)))
         yaw = math.radians(float(view.get('yaw', -38.0) or 0.0))
         pitch = max(-0.12, min(0.88, float(view.get('pitch', 0.34) or 0.34)))
         mode = view.get('mode', 'orbit')
@@ -2558,22 +2582,23 @@ class DashboardApp:
             draw.line([(i, int(h * .66)), (i - int(w * .18), h)], fill='#172943')
 
     def _draw_empty_preview(self, canvas, draw, w, h, camera=None, bounds=None):
-        sample = []
-        palette = [self._target_for(c) if self._target_for(c) != KEEP else c.source for c in self._all_records()[:8]]
-        if not palette:
-            palette = ['stone_bricks', 'oak_planks', 'glass', 'lantern']
-        for x in range(4):
-            for z in range(3):
-                sample.append((x + 3, 0, z + 3, palette[(x + z) % len(palette)]))
-        for y in range(1, 4):
-            sample.append((4, y, 4, palette[y % len(palette)]))
-            sample.append((5, y, 4, palette[(y + 1) % len(palette)]))
-        if camera is None:
-            bounds = self._record_bounds(sample)
-            camera = self._minecraft_camera(bounds, w, h)
-        self._draw_build_shadow(draw, sample, camera, w, h)
-        for _depth, poly, bid, normal, seed in self._visible_block_faces(sample, camera):
-            self._draw_minecraft_face(canvas, draw, poly, self._block_rgb(bid), normal, seed, bid)
+        title = '設計図を読み込むと表示します'
+        body = '.litematic をドロップしてください。'
+        if self.loaded_nbt is not None:
+            title = 'プレビューを取得できませんでした'
+            body = 'BlockStates を確認してください。'
+        title_font = self._ui_font(18 if w < 520 else 22, True)
+        body_font = self._ui_font(11 if w < 520 else 13, False)
+        tw = draw.textlength(title, font=title_font)
+        bw = draw.textlength(body, font=body_font)
+        panel_w = min(w - 28, max(360, int(max(tw, bw)) + 48))
+        panel_h = 112
+        x0 = int((w - panel_w) / 2)
+        y0 = int((h - panel_h) / 2)
+        draw.rounded_rectangle([x0, y0, x0 + panel_w, y0 + panel_h], radius=16,
+                               fill='#101820', outline='#4d79ff', width=2)
+        draw.text((x0 + (panel_w - tw) / 2, y0 + 28), title, font=title_font, fill='#ffffff')
+        draw.text((x0 + (panel_w - bw) / 2, y0 + 70), body, font=body_font, fill='#d7e7ff')
 
     def _draw_cube(self, draw, px, py, size, color):
         s = size
@@ -2607,23 +2632,31 @@ class DashboardApp:
         key = (id(self.loaded_nbt), max_blocks)
         if key in self._preview_source_cache:
             return self._preview_source_cache[key]
-        records = []
-        try:
-            regs = self.loaded_nbt.get('Regions', {})
-            for reg in regs.values():
-                records.extend(self._region_source_records(reg, max_blocks))
-        except Exception:
-            return []
-        if len(records) > max_blocks:
-            step = max(1, int(math.ceil(len(records) / float(max_blocks))))
-            records = records[::step]
-        if records:
-            min_x = min(r[0] for r in records)
-            min_y = min(r[1] for r in records)
-            min_z = min(r[2] for r in records)
-            records = [(x - min_x, y - min_y, z - min_z, bid) for x, y, z, bid in records]
-        self._preview_source_cache[key] = records
-        return records
+        source_key = (id(self.loaded_nbt), 'all_non_air')
+        if source_key in self._preview_source_cache:
+            records = self._preview_source_cache[source_key]
+        else:
+            records = []
+            try:
+                regs = self.loaded_nbt.get('Regions', {})
+                source_cap = max(60000, int(max_blocks or 0) * 4)
+                for reg in regs.values():
+                    records.extend(self._region_source_records(reg, source_cap))
+            except Exception:
+                return []
+            if records:
+                min_x = min(r[0] for r in records)
+                min_y = min(r[1] for r in records)
+                min_z = min(r[2] for r in records)
+                records = [(x - min_x, y - min_y, z - min_z, bid) for x, y, z, bid in records]
+            self._preview_source_cache[source_key] = records
+        sampled = records
+        if len(sampled) > max_blocks:
+            step = len(records) / float(max_blocks)
+            sampled = [records[min(len(records) - 1, int((i + 0.5) * step))]
+                       for i in range(max_blocks)]
+        self._preview_source_cache[key] = sampled
+        return sampled
 
     def _region_source_records(self, reg, max_blocks):
         palette = reg.get('BlockStatePalette', [])
@@ -2631,29 +2664,20 @@ class DashboardApp:
         pos = self._vec3(reg.get('Position')) or (0, 0, 0)
         size = self._vec3(reg.get('Size')) or (0, 0, 0)
         sx, sy, sz = abs(int(size[0])), abs(int(size[1])), abs(int(size[2]))
-        if not palette or not states or sx <= 0 or sy <= 0 or sz <= 0:
+        if len(palette) == 0 or len(states) == 0 or sx <= 0 or sy <= 0 or sz <= 0:
             return []
         total = sx * sy * sz
         bits = max(2, (len(palette) - 1).bit_length())
         mask = (1 << bits) - 1
         longs = [int(v) & 0xffffffffffffffff for v in states]
-        stride = 1
-        if total > max_blocks * 1.5:
-            stride = int(math.ceil((total / float(max_blocks * 1.5)) ** (1.0 / 3.0)))
-            stride = max(1, stride)
         dx = 1 if int(size[0]) >= 0 else -1
         dy = 1 if int(size[1]) >= 0 else -1
         dz = 1 if int(size[2]) >= 0 else -1
         out = []
         layer = sx * sz
-        if stride > 1:
-            iterable = (y * layer + z * sx + x
-                        for y in range(0, sy, stride)
-                        for z in range(0, sz, stride)
-                        for x in range(0, sx, stride))
-        else:
-            iterable = range(total)
-        for idx in iterable:
+        cap = max(max_blocks * 3, 900)
+        seen = 0
+        for idx in range(total):
             palette_index = self._palette_index_at(longs, bits, mask, idx)
             if palette_index < 0 or palette_index >= len(palette):
                 continue
@@ -2662,11 +2686,18 @@ class DashboardApp:
             base = bd.strip_ns(source)
             if base in ('air', 'cave_air', 'void_air'):
                 continue
+            seen += 1
             y = idx // layer
             rem = idx - y * layer
             z = rem // sx
             x = rem - z * sx
-            out.append((int(pos[0]) + x * dx, int(pos[1]) + y * dy, int(pos[2]) + z * dz, source))
+            rec = (int(pos[0]) + x * dx, int(pos[1]) + y * dy, int(pos[2]) + z * dz, source)
+            if len(out) < cap:
+                out.append(rec)
+            else:
+                slot = (((seen ^ (seen >> 16)) * 1103515245 + 12345) & 0x7fffffff) % seen
+                if slot < cap:
+                    out[slot] = rec
         return out
 
     def _palette_index_at(self, longs, bits, mask, idx):
