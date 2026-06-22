@@ -1,7 +1,7 @@
 {
-  "version": "1.2.7",
-  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.2.7/SchematicMaterialConverter.exe",
-  "sha256": "29260d82d0537b927f806b322b00a87e6887f8200cb43f6aabd10c4910a96576",
-  "notes": "Render previews from dense surface blocks instead of sparse samples, use full occupancy culling, and raise CPU preview budgets so large schematics display as solid structures.",
+  "version": "1.2.8",
+  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.2.8/SchematicMaterialConverter.exe",
+  "sha256": "97a28e2980ca41faa1f28a3a1061c99ab0e48a6560ac7578152a460ed9937cf0",
+  "notes": "Add a GPU/OpenGL large preview window, move heavy preview rendering off Tk/Pillow, and reduce CPU thumbnail budgets for smoother interaction.",
   "mandatory": false
 }

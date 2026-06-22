@@ -2,3 +2,4 @@ nbtlib>=2.0.4
 Pillow>=10.0.0
 tkinterdnd2>=0.4.2
 pyinstaller>=6.0
+pyglet>=2.1.14

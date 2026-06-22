@@ -291,7 +291,7 @@ class InteractivePreview(tk.Canvas):
         h = max(150, self.winfo_height())
         try:
             large = w * h >= 260000
-            max_blocks = (8000 if large else 4000) if self._drag else (120000 if large else 30000)
+            max_blocks = (5000 if large else 2200) if self._drag else (24000 if large else 8000)
             im = self.app._render_schematic_preview(w, h, max_blocks=max_blocks,
                                                     view=self.view_state(), fast=bool(self._drag))
             self._photo = ImageTk.PhotoImage(im)
@@ -669,6 +669,32 @@ class DashboardApp:
             self._button(row, '実行', cmd, bg='#28215a', padx=12, pady=5).pack(side='right', padx=10)
 
     def open_full_preview(self):
+        if self._open_gpu_preview():
+            return
+        self._open_cpu_full_preview()
+
+    def _open_gpu_preview(self):
+        if self.loaded_nbt is None:
+            messagebox.showinfo(APP_TITLE, '先に設計図を読み込んでください。')
+            return True
+        try:
+            import gpu_preview
+        except Exception as exc:
+            messagebox.showwarning(APP_TITLE, 'GPUプレビューを起動できませんでした。\nCPUプレビューに切り替えます。\n\n%s' % exc)
+            return False
+        try:
+            payload = self._gpu_preview_payload()
+            if not payload.get('blocks'):
+                messagebox.showinfo(APP_TITLE, 'プレビューできるブロックが見つかりませんでした。')
+                return True
+            gpu_preview.open_preview_async(payload)
+            self._sync_progress(text='進行状況: GPUプレビューを起動しました')
+            return True
+        except Exception as exc:
+            messagebox.showwarning(APP_TITLE, 'GPUプレビューの準備に失敗しました。\nCPUプレビューに切り替えます。\n\n%s' % exc)
+            return False
+
+    def _open_cpu_full_preview(self):
         top, body = self._dialog('Minecraft風プレビュー', 1180, 760)
         body.grid_rowconfigure(0, weight=1)
         body.grid_columnconfigure(0, weight=1)
@@ -2254,11 +2280,29 @@ class DashboardApp:
                 pass
 
     # ---------------------------------------------------------------- visuals
+    def _gpu_preview_payload(self):
+        records = self._render_records(max_blocks=10 ** 9)
+        occupied = self._source_occupied_positions()
+        bounds = self._record_bounds(records)
+        blocks = []
+        for x, y, z, bid in records:
+            r, g, b = self._block_rgb(bid)
+            blocks.append((int(x), int(y), int(z), int(r), int(g), int(b)))
+        return {
+            'title': os.path.basename(self.src_path or 'schematic'),
+            'blocks': blocks,
+            'occupied': occupied,
+            'bounds': bounds,
+            'max_faces': 300000,
+            'width': 1280,
+            'height': 760,
+        }
+
     def _loaded_thumb(self, w, h):
         key = ('loaded', w, h, self.src_path, icons.minecraft_assets_label())
         if key in self.image_cache:
             return self.image_cache[key]
-        im = self._render_schematic_preview(w, h, max_blocks=12000, fast=True)
+        im = self._render_schematic_preview(w, h, max_blocks=7000, fast=True)
         img = ImageTk.PhotoImage(im)
         self.image_cache[key] = img
         return img
@@ -2268,14 +2312,14 @@ class DashboardApp:
                icons.minecraft_assets_label())
         if key in self.image_cache:
             return self.image_cache[key]
-        im = self._render_schematic_preview(w, h, max_blocks=30000, fast=True)
+        im = self._render_schematic_preview(w, h, max_blocks=9000, fast=True)
         img = ImageTk.PhotoImage(im)
         self.image_cache[key] = img
         return img
 
     def _render_schematic_preview(self, w, h, max_blocks=80000, view=None, fast=False):
         if fast:
-            max_blocks = min(max_blocks, 12000)
+            max_blocks = min(max_blocks, 7000)
         im = Image.new('RGB', (w, h), '#87c9ff')
         d = ImageDraw.Draw(im)
         records = self._render_records(max_blocks=max_blocks)
@@ -2291,10 +2335,10 @@ class DashboardApp:
 
         self._draw_build_shadow(d, records, camera, w, h, fast=fast)
         faces = self._visible_block_faces(records, camera, occupied_positions=occupied)
-        face_limit = 4500 if fast else (52000 if w * h >= 260000 else 18000)
+        face_limit = 3200 if fast else (26000 if w * h >= 260000 else 9000)
         if len(faces) > face_limit:
             faces = faces[-face_limit:]
-        use_textures = not fast and len(faces) <= 22000
+        use_textures = not fast and w * h >= 260000 and len(faces) <= 16000
         for depth, poly, bid, normal, seed in faces:
             self._draw_minecraft_face(im, d, poly, self._block_rgb(bid), normal, seed, bid,
                                       textured=use_textures)

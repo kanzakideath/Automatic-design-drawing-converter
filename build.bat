@@ -19,6 +19,7 @@ rem PyInstaller には ASCII 名を渡し、後で日本語名にリネームす
 python -m PyInstaller --noconfirm --clean --onefile --windowed ^
     --name SchematicMaterialConverter ^
     --collect-all tkinterdnd2 ^
+    --collect-all pyglet ^
     --exclude-module psutil ^
     --exclude-module charset_normalizer ^
     --add-data "data;data" ^
