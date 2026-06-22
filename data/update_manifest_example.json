@@ -1,7 +1,7 @@
 {
-  "version": "1.2.8",
-  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.2.8/SchematicMaterialConverter.exe",
-  "sha256": "97a28e2980ca41faa1f28a3a1061c99ab0e48a6560ac7578152a460ed9937cf0",
-  "notes": "Add a GPU/OpenGL large preview window, move heavy preview rendering off Tk/Pillow, and reduce CPU thumbnail budgets for smoother interaction.",
+  "version": "1.2.9",
+  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.2.9/SchematicMaterialConverter.exe",
+  "sha256": "70a77f884ae8b5ba0d4bbd070a4b238e13954c311b9704f65662d4768b030c5a",
+  "notes": "Render the GPU preview with Minecraft texture atlases, add simple non-cube block shapes, make the side preview dense instead of particle-like, improve preview controls, and enlarge the preview-focused layout.",
   "mandatory": false
 }

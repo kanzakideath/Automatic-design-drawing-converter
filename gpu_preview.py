@@ -29,6 +29,14 @@ FACE_DEFS = (
 
 TRI_ORDER = (0, 1, 2, 0, 2, 3)
 
+SHAPE_BOUNDS = {
+    0: (0.0, 0.0, 0.0, 1.0, 1.0, 1.0),       # full cube
+    1: (0.0, 0.0, 0.0, 1.0, 0.5, 1.0),       # slab-like
+    2: (0.0, 0.02, 0.0, 1.0, 0.08, 1.0),    # rail/carpet/plate-like
+    3: (0.32, 0.0, 0.32, 0.36, 1.0, 0.36),  # fence/wall post approximation
+    4: (0.45, 0.0, 0.0, 0.10, 1.0, 1.0),    # pane/bars approximation
+}
+
 
 def open_preview_async(payload):
     """Open a GPU preview window on its own pyglet event-loop thread."""
@@ -70,10 +78,12 @@ def _shade(color, factor):
 
 def _count_exposed_faces(blocks, occupied):
     total = 0
-    for x, y, z, _r, _g, _b in blocks:
+    for block in blocks:
+        x, y, z = block[:3]
+        shape_id = int(block[8]) if len(block) > 8 else 0
         ix, iy, iz = int(x), int(y), int(z)
         for normal, _corners, _light in FACE_DEFS:
-            if (ix + normal[0], iy + normal[1], iz + normal[2]) not in occupied:
+            if shape_id != 0 or (ix + normal[0], iy + normal[1], iz + normal[2]) not in occupied:
                 total += 1
     return total
 
@@ -81,34 +91,48 @@ def _count_exposed_faces(blocks, occupied):
 def build_mesh(payload):
     blocks = payload.get('blocks') or []
     occupied = payload.get('occupied') or set()
+    atlas_uvs = payload.get('atlas_uvs') or [(0.0, 0.0, 1.0, 1.0)]
     max_faces = int(payload.get('max_faces') or 260000)
     face_total = _count_exposed_faces(blocks, occupied)
     stride = max(1, int(math.ceil(face_total / float(max_faces)))) if max_faces > 0 else 1
 
     positions = array('f')
     colors = array('B')
+    tex_coords = array('f')
     face_index = 0
     emitted_faces = 0
 
-    for x, y, z, r, g, b in blocks:
+    for block in blocks:
+        x, y, z, r, g, b = block[:6]
+        top_tile = int(block[6]) if len(block) > 6 else 0
+        side_tile = int(block[7]) if len(block) > 7 else top_tile
+        shape_id = int(block[8]) if len(block) > 8 else 0
+        ox, oy, oz, sx, sy, sz = SHAPE_BOUNDS.get(shape_id, SHAPE_BOUNDS[0])
+        full_occlusion = shape_id == 0
         ix, iy, iz = int(x), int(y), int(z)
         base = (int(r), int(g), int(b))
         for normal, corners, light in FACE_DEFS:
-            if (ix + normal[0], iy + normal[1], iz + normal[2]) in occupied:
+            if full_occlusion and (ix + normal[0], iy + normal[1], iz + normal[2]) in occupied:
                 continue
             if face_index % stride:
                 face_index += 1
                 continue
             shaded = _shade(base, light)
-            pts = [(ix + cx, iy + cy, iz + cz) for cx, cy, cz in corners]
+            pts = [(ix + ox + cx * sx, iy + oy + cy * sy, iz + oz + cz * sz) for cx, cy, cz in corners]
+            tile_index = top_tile if normal[1] else side_tile
+            if tile_index < 0 or tile_index >= len(atlas_uvs):
+                tile_index = 0
+            u0, v0, u1, v1 = atlas_uvs[tile_index]
+            quad_uvs = ((u0, v0), (u1, v0), (u1, v1), (u0, v1))
             for corner_index in TRI_ORDER:
                 px, py, pz = pts[corner_index]
                 positions.extend((float(px), float(py), float(pz)))
                 colors.extend((shaded[0], shaded[1], shaded[2], 255))
+                tex_coords.extend(quad_uvs[corner_index])
             emitted_faces += 1
             face_index += 1
 
-    return positions, colors, face_total, emitted_faces, stride
+    return positions, colors, tex_coords, face_total, emitted_faces, stride
 
 
 def build_ground(bounds):
@@ -141,7 +165,9 @@ def build_ground(bounds):
         grid_positions.extend((x0, y + 0.01, float(z), x1, y + 0.01, float(z)))
         grid_colors.extend((82, 216, 92, 255, 82, 216, 92, 255))
         z += step
-    return ground_positions, ground_colors, grid_positions, grid_colors
+    ground_tex = array('f', (0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0))
+    grid_tex = array('f', (0.0, 0.0) * (len(grid_positions) // 3))
+    return ground_positions, ground_colors, ground_tex, grid_positions, grid_colors, grid_tex
 
 
 class GpuPreviewWindow:
@@ -182,18 +208,37 @@ class GpuPreviewWindow:
         self.window.set_minimum_size(860, 520)
 
         self.program = ShaderProgram(Shader(VERTEX_SHADER, 'vertex'), Shader(FRAGMENT_SHADER, 'fragment'))
+        self.texture = self._create_atlas_texture()
         self._build_vertex_lists()
         self._reset_camera()
         self.label = pyglet.text.Label('', font_name='Yu Gothic UI', font_size=11,
                                        x=12, y=self.window.height - 12, anchor_x='left',
-                                       anchor_y='top', color=(255, 255, 255, 255))
+                                       anchor_y='top', color=(255, 255, 255, 255),
+                                       multiline=True, width=max(240, self.window.width - 24))
         gl.glEnable(gl.GL_DEPTH_TEST)
+        gl.glEnable(gl.GL_BLEND)
+        gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
         gl.glDisable(gl.GL_CULL_FACE)
+
+    def _create_atlas_texture(self):
+        atlas = self.payload.get('atlas') or {}
+        width = int(atlas.get('width') or 1)
+        height = int(atlas.get('height') or 1)
+        data = atlas.get('rgba') or b'\xff\xff\xff\xff'
+        image = self.pyglet.image.ImageData(width, height, 'RGBA', data, pitch=-width * 4)
+        texture = image.get_texture()
+        gl = self.gl
+        gl.glBindTexture(texture.target, texture.id)
+        gl.glTexParameteri(texture.target, gl.GL_TEXTURE_MIN_FILTER, gl.GL_NEAREST)
+        gl.glTexParameteri(texture.target, gl.GL_TEXTURE_MAG_FILTER, gl.GL_NEAREST)
+        gl.glTexParameteri(texture.target, gl.GL_TEXTURE_WRAP_S, gl.GL_CLAMP_TO_EDGE)
+        gl.glTexParameteri(texture.target, gl.GL_TEXTURE_WRAP_T, gl.GL_CLAMP_TO_EDGE)
+        return texture
 
     def _build_vertex_lists(self):
         from pyglet import gl
 
-        positions, colors, face_total, emitted_faces, stride = build_mesh(self.payload)
+        positions, colors, tex_coords, face_total, emitted_faces, stride = build_mesh(self.payload)
         self.face_total = face_total
         self.face_emitted = emitted_faces
         self.stride = stride
@@ -202,18 +247,21 @@ class GpuPreviewWindow:
             self.vertex_count, gl.GL_TRIANGLES,
             position=('f', positions),
             colors=('Bn', colors),
+            tex_coords=('f', tex_coords),
         ) if self.vertex_count else None
 
-        gp, gc, gridp, gridc = build_ground(self.bounds)
+        gp, gc, gt, gridp, gridc, gridt = build_ground(self.bounds)
         self.ground_list = self.program.vertex_list(
             len(gp) // 3, gl.GL_TRIANGLES,
             position=('f', gp),
             colors=('Bn', gc),
+            tex_coords=('f', gt),
         )
         self.grid_list = self.program.vertex_list(
             len(gridp) // 3, gl.GL_LINES,
             position=('f', gridp),
             colors=('Bn', gridc),
+            tex_coords=('f', gridt),
         )
 
     def _reset_camera(self):
@@ -239,11 +287,17 @@ class GpuPreviewWindow:
         gl.glClearColor(0.46, 0.73, 1.0, 1.0)
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
         gl.glEnable(gl.GL_DEPTH_TEST)
+        gl.glEnable(gl.GL_BLEND)
         self.program.use()
         self.program['mvp'] = self._mvp_matrix()
+        gl.glActiveTexture(gl.GL_TEXTURE0)
+        gl.glBindTexture(self.texture.target, self.texture.id)
+        self.program['atlas_texture'] = 0
+        self.program['use_texture'] = 0
         self.ground_list.draw(gl.GL_TRIANGLES)
         self.grid_list.draw(gl.GL_LINES)
         if self.mesh_list is not None:
+            self.program['use_texture'] = 1
             self.mesh_list.draw(gl.GL_TRIANGLES)
         gl.glDisable(gl.GL_DEPTH_TEST)
         self._draw_overlay()
@@ -273,6 +327,33 @@ class GpuPreviewWindow:
             tz + math.cos(yaw) * math.cos(pitch) * dist,
         )
         return eye, self.target
+
+    def _camera_basis(self):
+        eye, target = self._camera_points()
+        forward = self._norm((target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]))
+        right = self._norm(self._cross(forward, (0.0, 1.0, 0.0)))
+        up = self._cross(right, forward)
+        return right, up
+
+    def _pan_orbit(self, dx, dy):
+        right, up = self._camera_basis()
+        scale = (self.distance / max(0.2, self.zoom)) / float(max(320, self.window.width)) * 1.35
+        self.target = (
+            self.target[0] - right[0] * dx * scale + up[0] * dy * scale,
+            self.target[1] - right[1] * dx * scale + up[1] * dy * scale,
+            self.target[2] - right[2] * dx * scale + up[2] * dy * scale,
+        )
+
+    def _norm(self, vec):
+        length = math.sqrt(max(1e-9, vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2]))
+        return vec[0] / length, vec[1] / length, vec[2] / length
+
+    def _cross(self, a, b):
+        return (
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        )
 
     def update(self, dt):
         self._fps_frames += 1
@@ -312,13 +393,16 @@ class GpuPreviewWindow:
 
     def _draw_overlay(self):
         title = self.payload.get('title') or 'GPU Preview'
+        if len(title) > 54:
+            title = title[:51] + '...'
         mode = '内部視点' if self.mode == 'walk' else '外観'
         downsample = ' / 間引き %d' % self.stride if self.stride > 1 else ''
         self.label.x = 12
         self.label.y = self.window.height - 12
+        self.label.width = max(240, self.window.width - 24)
         self.label.text = (
-            '%s  |  %s  |  %.0f fps  |  %s faces%s\n'
-            'ドラッグ: 回転  ホイール: 拡大縮小  F: 内部視点  WASD/Space/Ctrl: 移動  R: リセット  Esc: 閉じる'
+            '%s | %s | %.0f fps | 面 %s%s\n'
+            '左ドラッグ: 回転   右ドラッグ/Shift+左: 平行移動   ホイール: ズーム   F: 内部視点   R: リセット   Esc: 閉じる'
             % (title, mode, self.fps, f'{self.face_emitted:,}/{self.face_total:,}', downsample)
         )
         self.label.draw()
@@ -331,13 +415,18 @@ class GpuPreviewWindow:
         if button == self.pyglet.window.mouse.LEFT:
             self.mouse_down = False
 
-    def on_mouse_drag(self, _x, _y, dx, dy, buttons, _mods):
-        if buttons & self.pyglet.window.mouse.LEFT:
+    def on_mouse_drag(self, _x, _y, dx, dy, buttons, mods):
+        mouse = self.pyglet.window.mouse
+        key = self.pyglet.window.key
+        if self.mode == 'orbit' and (buttons & mouse.RIGHT or buttons & mouse.MIDDLE
+                                     or (buttons & mouse.LEFT and mods & key.MOD_SHIFT)):
+            self._pan_orbit(dx, dy)
+        elif buttons & mouse.LEFT:
             self.yaw += dx * 0.22
-            self.pitch = max(-82.0, min(82.0, self.pitch + dy * 0.18))
+            self.pitch = max(-18.0, min(82.0, self.pitch + dy * 0.18))
 
     def on_mouse_scroll(self, _x, _y, _sx, sy):
-        self.zoom = max(0.18, min(8.0, self.zoom * (1.12 ** sy)))
+        self.zoom = max(0.18, min(8.0, self.zoom * (1.09 ** sy)))
 
     def on_key_press(self, symbol, _mods):
         key = self.pyglet.window.key
@@ -355,6 +444,21 @@ class GpuPreviewWindow:
             self.mode = 'walk' if self.mode == 'orbit' else 'orbit'
             if self.mode == 'walk':
                 self.pitch = 8.0
+        elif symbol in (key._1, key.NUM_1):
+            self.mode = 'orbit'
+            self.yaw = -42.0
+            self.pitch = 26.0
+            self.zoom = 1.0
+        elif symbol in (key._2, key.NUM_2):
+            self.mode = 'orbit'
+            self.yaw = 0.0
+            self.pitch = 70.0
+            self.zoom = 1.15
+        elif symbol in (key._3, key.NUM_3):
+            self.mode = 'orbit'
+            self.yaw = -90.0
+            self.pitch = 12.0
+            self.zoom = 1.05
 
     def on_key_release(self, symbol, _mods):
         name = self.pyglet.window.key.symbol_string(symbol)
@@ -376,21 +480,36 @@ class GpuPreviewWindow:
 VERTEX_SHADER = """#version 330 core
 in vec3 position;
 in vec4 colors;
+in vec2 tex_coords;
 uniform mat4 mvp;
 out vec4 v_color;
+out vec2 v_tex_coords;
 void main()
 {
     gl_Position = mvp * vec4(position, 1.0);
     v_color = colors;
+    v_tex_coords = tex_coords;
 }
 """
 
 
 FRAGMENT_SHADER = """#version 330 core
 in vec4 v_color;
+in vec2 v_tex_coords;
+uniform sampler2D atlas_texture;
+uniform int use_texture;
 out vec4 final_color;
 void main()
 {
-    final_color = v_color;
+    vec4 color = v_color;
+    if (use_texture == 1) {
+        vec4 tex = texture(atlas_texture, v_tex_coords);
+        if (tex.a < 0.08) {
+            discard;
+        }
+        color = tex * v_color;
+        color.a = max(tex.a, 0.72);
+    }
+    final_color = color;
 }
 """

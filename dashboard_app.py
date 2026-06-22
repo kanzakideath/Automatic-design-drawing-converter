@@ -61,7 +61,7 @@ UI = {
     'HOVER': '#3a3a3c', 'CARD': '#1c1c1e', 'BADGE_BG': '#2c2c2e',
     'BADGE_FG': '#d7e7ff', 'NBADGE_BG': '#2c2c2e', 'NBADGE_FG': '#c7c7cc',
 }
-UI_FONT_BOOST = 1
+UI_FONT_BOOST = 2
 
 
 def _hex_to_rgb(value):
@@ -291,7 +291,7 @@ class InteractivePreview(tk.Canvas):
         h = max(150, self.winfo_height())
         try:
             large = w * h >= 260000
-            max_blocks = (5000 if large else 2200) if self._drag else (24000 if large else 8000)
+            max_blocks = (7000 if large else 3500) if self._drag else (85000 if large else 45000)
             im = self.app._render_schematic_preview(w, h, max_blocks=max_blocks,
                                                     view=self.view_state(), fast=bool(self._drag))
             self._photo = ImageTk.PhotoImage(im)
@@ -478,8 +478,8 @@ class DashboardApp:
     def _build_ui(self):
         self.root.title(APP_TITLE)
         self.root.configure(bg=UI['BG'])
-        self._set_centered_geometry(self.root, 1440, 840)
-        self.root.minsize(1280, 760)
+        self._set_centered_geometry(self.root, 1500, 900)
+        self.root.minsize(1280, 780)
         self.root.grid_rowconfigure(1, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
         self._configure_style()
@@ -1041,15 +1041,15 @@ class DashboardApp:
 
         self.content = tk.Frame(self.main, bg=UI['BG'])
         self.content.grid(row=1, column=0, sticky='nsew', pady=(10, 0))
-        self.content.grid_columnconfigure(0, minsize=270)
+        self.content.grid_columnconfigure(0, minsize=250)
         self.content.grid_columnconfigure(1, weight=1)
-        self.content.grid_columnconfigure(2, minsize=340)
+        self.content.grid_columnconfigure(2, minsize=470)
         self.content.grid_rowconfigure(0, weight=1)
 
         self.left_col = tk.Frame(self.content, bg=UI['BG'])
-        self.left_col.grid(row=0, column=0, sticky='nsew', padx=(0, 12))
+        self.left_col.grid(row=0, column=0, sticky='nsew', padx=(0, 14))
         self.center_col = tk.Frame(self.content, bg=UI['BG'])
-        self.center_col.grid(row=0, column=1, sticky='nsew', padx=(0, 12))
+        self.center_col.grid(row=0, column=1, sticky='nsew', padx=(0, 14))
         self.right_col = tk.Frame(self.content, bg=UI['BG'])
         self.right_col.grid(row=0, column=2, sticky='nsew')
         self.right_col.grid_rowconfigure(0, weight=1)
@@ -1240,13 +1240,14 @@ class DashboardApp:
         panel = self._panel(self.right_col)
         panel.grid(row=0, column=0, sticky='nsew')
         panel.grid_columnconfigure(0, weight=1)
+        panel.grid_rowconfigure(1, weight=3)
         panel.grid_rowconfigure(4, weight=1)
         self._label(panel, '変換結果プレビュー', size=10, weight='bold').grid(
             row=0, column=0, sticky='w', padx=12, pady=(10, 6))
         self._label(panel, '● リアルタイム更新', size=8, fg=UI['GREEN']).grid(
             row=0, column=0, sticky='e', padx=12, pady=(10, 6))
-        self.preview_view = InteractivePreview(panel, self, width=318, height=205)
-        self.preview_view.grid(row=1, column=0, sticky='ew', padx=12, pady=(0, 8))
+        self.preview_view = InteractivePreview(panel, self, width=448, height=300)
+        self.preview_view.grid(row=1, column=0, sticky='nsew', padx=12, pady=(0, 10))
 
         controls = tk.Frame(panel, bg=UI['PANEL'])
         controls.grid(row=2, column=0, sticky='ew', padx=12, pady=(0, 8))
@@ -2284,25 +2285,88 @@ class DashboardApp:
         records = self._render_records(max_blocks=10 ** 9)
         occupied = self._source_occupied_positions()
         bounds = self._record_bounds(records)
+        atlas, tile_map = self._gpu_texture_atlas(records)
         blocks = []
         for x, y, z, bid in records:
+            base = bd.strip_ns(bid)
             r, g, b = self._block_rgb(bid)
-            blocks.append((int(x), int(y), int(z), int(r), int(g), int(b)))
+            top_tile = tile_map.get((base, True), 0)
+            side_tile = tile_map.get((base, False), top_tile)
+            blocks.append((int(x), int(y), int(z), int(r), int(g), int(b),
+                           top_tile, side_tile, self._gpu_shape_id(base)))
         return {
             'title': os.path.basename(self.src_path or 'schematic'),
             'blocks': blocks,
             'occupied': occupied,
             'bounds': bounds,
-            'max_faces': 300000,
+            'atlas': atlas,
+            'atlas_uvs': atlas['uvs'],
+            'max_faces': 650000,
             'width': 1280,
             'height': 760,
         }
+
+    def _gpu_texture_atlas(self, records):
+        bases = sorted({bd.strip_ns(bid) for _x, _y, _z, bid in records})
+        tile_size = 32
+        entries = []
+        tile_map = {}
+        for base in bases:
+            for top in (False, True):
+                tile_map[(base, top)] = len(entries)
+                try:
+                    tex = icons.block_texture_image(base, top=top).convert('RGBA')
+                except Exception:
+                    tex = Image.new('RGBA', (tile_size, tile_size), self._block_rgb(base) + (255,))
+                if tex.size != (tile_size, tile_size):
+                    tex = tex.resize((tile_size, tile_size), Image.Resampling.NEAREST)
+                entries.append(tex)
+        if not entries:
+            entries.append(Image.new('RGBA', (tile_size, tile_size), (255, 255, 255, 255)))
+        cols = max(1, int(math.ceil(math.sqrt(len(entries)))))
+        rows = int(math.ceil(len(entries) / float(cols)))
+        atlas_img = Image.new('RGBA', (cols * tile_size, rows * tile_size), (255, 255, 255, 255))
+        uvs = []
+        inset = 0.25
+        for index, tex in enumerate(entries):
+            col = index % cols
+            row = index // cols
+            x = col * tile_size
+            y = row * tile_size
+            atlas_img.paste(tex, (x, y))
+            u0 = (x + inset) / atlas_img.width
+            u1 = (x + tile_size - inset) / atlas_img.width
+            v0 = 1.0 - ((y + tile_size - inset) / atlas_img.height)
+            v1 = 1.0 - ((y + inset) / atlas_img.height)
+            uvs.append((u0, v0, u1, v1))
+        return {
+            'width': atlas_img.width,
+            'height': atlas_img.height,
+            'rgba': atlas_img.tobytes(),
+            'uvs': uvs,
+            'tile_size': tile_size,
+            'count': len(entries),
+            'source': icons.minecraft_assets_label(),
+        }, tile_map
+
+    def _gpu_shape_id(self, base):
+        base = bd.strip_ns(base)
+        if base.endswith('_slab'):
+            return 1
+        if ('rail' in base or base.endswith('_carpet') or base.endswith('_pressure_plate')
+                or base in ('snow', 'repeater', 'comparator')):
+            return 2
+        if base.endswith('_fence') or base.endswith('_wall') or base in ('iron_bars', 'chain'):
+            return 3
+        if base.endswith('_pane'):
+            return 4
+        return 0
 
     def _loaded_thumb(self, w, h):
         key = ('loaded', w, h, self.src_path, icons.minecraft_assets_label())
         if key in self.image_cache:
             return self.image_cache[key]
-        im = self._render_schematic_preview(w, h, max_blocks=7000, fast=True)
+        im = self._render_schematic_preview(w, h, max_blocks=45000, fast=False)
         img = ImageTk.PhotoImage(im)
         self.image_cache[key] = img
         return img
@@ -2312,7 +2376,7 @@ class DashboardApp:
                icons.minecraft_assets_label())
         if key in self.image_cache:
             return self.image_cache[key]
-        im = self._render_schematic_preview(w, h, max_blocks=9000, fast=True)
+        im = self._render_schematic_preview(w, h, max_blocks=60000, fast=False)
         img = ImageTk.PhotoImage(im)
         self.image_cache[key] = img
         return img
@@ -2335,10 +2399,10 @@ class DashboardApp:
 
         self._draw_build_shadow(d, records, camera, w, h, fast=fast)
         faces = self._visible_block_faces(records, camera, occupied_positions=occupied)
-        face_limit = 3200 if fast else (26000 if w * h >= 260000 else 9000)
+        face_limit = 4200 if fast else (32000 if w * h >= 260000 else 12000)
         if len(faces) > face_limit:
             faces = faces[-face_limit:]
-        use_textures = not fast and w * h >= 260000 and len(faces) <= 16000
+        use_textures = not fast and len(faces) <= 14000
         for depth, poly, bid, normal, seed in faces:
             self._draw_minecraft_face(im, d, poly, self._block_rgb(bid), normal, seed, bid,
                                       textured=use_textures)
