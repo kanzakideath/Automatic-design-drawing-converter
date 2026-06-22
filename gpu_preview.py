@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from array import array
 import math
+import queue
 import threading
 import traceback
 
@@ -19,8 +20,8 @@ _active_lock = threading.Lock()
 
 
 FACE_DEFS = (
-    ((0, 1, 0), ((0, 1, 0), (1, 1, 0), (1, 1, 1), (0, 1, 1)), 1.18),
-    ((0, -1, 0), ((0, 0, 1), (1, 0, 1), (1, 0, 0), (0, 0, 0)), 0.48),
+    ((0, 1, 0), ((0, 1, 1), (1, 1, 1), (1, 1, 0), (0, 1, 0)), 1.18),
+    ((0, -1, 0), ((0, 0, 0), (1, 0, 0), (1, 0, 1), (0, 0, 1)), 0.48),
     ((0, 0, 1), ((0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)), 0.86),
     ((1, 0, 0), ((1, 0, 1), (1, 0, 0), (1, 1, 0), (1, 1, 1)), 0.76),
     ((0, 0, -1), ((1, 0, 0), (0, 0, 0), (0, 1, 0), (1, 1, 0)), 0.68),
@@ -43,21 +44,38 @@ DIR_BITS = {'north': 1, 'east': 2, 'south': 4, 'west': 8}
 def open_preview_async(payload):
     """Open a GPU preview window on its own pyglet event-loop thread."""
     global _active_thread
+    status_q = queue.Queue(maxsize=1)
     with _active_lock:
         if _active_thread is not None and _active_thread.is_alive():
             raise RuntimeError('GPUプレビューはすでに開いています。先に閉じてください。')
-        _active_thread = threading.Thread(target=_run_preview_safe, args=(payload,), daemon=True)
+        _active_thread = threading.Thread(target=_run_preview_safe, args=(payload, status_q), daemon=True)
         _active_thread.start()
-
-
-def _run_preview_safe(payload):
     try:
-        _run_preview(payload)
+        status, detail = status_q.get(timeout=float(payload.get('startup_timeout', 3.0)))
+    except queue.Empty:
+        return
+    if status == 'error':
+        raise RuntimeError(detail)
+
+
+def _run_preview_safe(payload, status_q=None):
+    try:
+        _run_preview(payload, status_q)
     except Exception:
+        if status_q is not None:
+            try:
+                status_q.put_nowait(('error', traceback.format_exc()))
+            except queue.Full:
+                pass
         traceback.print_exc()
+    finally:
+        global _active_thread
+        with _active_lock:
+            if _active_thread is threading.current_thread():
+                _active_thread = None
 
 
-def _run_preview(payload):
+def _run_preview(payload, status_q=None):
     import pyglet
 
     pyglet.options['debug_gl'] = False
@@ -68,6 +86,11 @@ def _run_preview(payload):
         window = GpuPreviewWindow(payload, config=config)
     except Exception:
         window = GpuPreviewWindow(payload)
+    if status_q is not None:
+        try:
+            status_q.put_nowait(('ok', ''))
+        except queue.Full:
+            pass
     pyglet.clock.schedule_interval(window.update, 1.0 / 240.0)
     pyglet.app.run(interval=0)
 
@@ -252,8 +275,8 @@ def build_ground(bounds):
     z0, z1 = cz - extent, cz + extent
 
     ground_positions = array('f', (
-        x0, y, z0, x1, y, z0, x1, y, z1,
-        x0, y, z0, x1, y, z1, x0, y, z1,
+        x0, y, z0, x0, y, z1, x1, y, z1,
+        x0, y, z0, x1, y, z1, x1, y, z0,
     ))
     ground_colors = array('B')
     for _ in range(6):
@@ -304,6 +327,8 @@ class GpuPreviewWindow:
         self._fps_frames = 0
         self._fps_time = 0.0
         self._closed = False
+        self._overlay_size = (0, 0)
+        self._overlay_dirty = True
 
         width = int(payload.get('width') or 1280)
         height = int(payload.get('height') or 760)
@@ -326,7 +351,14 @@ class GpuPreviewWindow:
         gl.glEnable(gl.GL_DEPTH_TEST)
         gl.glEnable(gl.GL_BLEND)
         gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
-        gl.glDisable(gl.GL_CULL_FACE)
+        gl.glEnable(gl.GL_CULL_FACE)
+        gl.glCullFace(gl.GL_BACK)
+        gl.glFrontFace(gl.GL_CCW)
+        try:
+            gl.glDisable(gl.GL_MULTISAMPLE)
+        except Exception:
+            pass
+        self._update_overlay_text()
 
     def _create_atlas_texture(self):
         atlas = self.payload.get('atlas') or {}
@@ -472,6 +504,7 @@ class GpuPreviewWindow:
             self.fps = self._fps_frames / self._fps_time
             self._fps_frames = 0
             self._fps_time = 0.0
+            self._overlay_dirty = True
         if self.mode != 'walk':
             return
         speed = max(3.5, max(float(self.bounds.get('span_x', 32.0)),
@@ -502,21 +535,28 @@ class GpuPreviewWindow:
         self.walk_pos[2] += vec[2] * amount
 
     def _draw_overlay(self):
+        size = (self.window.width, self.window.height)
+        if self._overlay_dirty or self._overlay_size != size:
+            self._update_overlay_text()
+            self._overlay_dirty = False
+            self._overlay_size = size
+        self.label.x = 12
+        self.label.y = self.window.height - 12
+        self.label.width = max(240, self.window.width - 24)
+        self.label.draw()
+
+    def _update_overlay_text(self):
         title = self.payload.get('title') or 'GPU Preview'
         if len(title) > 54:
             title = title[:51] + '...'
         mode = '内部視点' if self.mode == 'walk' else '外観'
-        downsample = ' / 間引き %d' % self.stride if self.stride > 1 else ''
-        self.label.x = 12
-        self.label.y = self.window.height - 12
-        self.label.width = max(240, self.window.width - 24)
+        downsample = ' / 速度優先LOD %d' % self.stride if self.stride > 1 else ''
         self.label.text = (
             '%s | %s | %.0f fps | 面 %s%s\n'
             '左ドラッグ: 回転/視点移動   右ドラッグ/Shift+左: 平行移動   ホイール: ズーム   '
             'F: 内部視点   1/2/3: 視点切替   R: リセット   Esc: 閉じる'
             % (title, mode, self.fps, f'{self.face_emitted:,}/{self.face_total:,}', downsample)
         )
-        self.label.draw()
 
     def on_mouse_press(self, _x, _y, button, _mods):
         if button == self.pyglet.window.mouse.LEFT:
@@ -551,25 +591,30 @@ class GpuPreviewWindow:
             self.zoom = 1.0
             self.mode = 'orbit'
             self._reset_camera()
+            self._overlay_dirty = True
         elif symbol == key.F:
             self.mode = 'walk' if self.mode == 'orbit' else 'orbit'
             if self.mode == 'walk':
                 self.pitch = 8.0
+            self._overlay_dirty = True
         elif symbol in (key._1, key.NUM_1):
             self.mode = 'orbit'
             self.yaw = -42.0
             self.pitch = 26.0
             self.zoom = 1.0
+            self._overlay_dirty = True
         elif symbol in (key._2, key.NUM_2):
             self.mode = 'orbit'
             self.yaw = 0.0
             self.pitch = 70.0
             self.zoom = 1.15
+            self._overlay_dirty = True
         elif symbol in (key._3, key.NUM_3):
             self.mode = 'orbit'
             self.yaw = -90.0
             self.pitch = 12.0
             self.zoom = 1.05
+            self._overlay_dirty = True
 
     def on_key_release(self, symbol, _mods):
         name = self.pyglet.window.key.symbol_string(symbol)

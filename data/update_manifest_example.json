@@ -1,7 +1,7 @@
 {
-  "version": "1.3.2",
-  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.3.2/SchematicMaterialConverter.exe",
-  "sha256": "d19afa2a0d116860fb49341d721190b03149809b45cc4843075520b5894450e9",
-  "notes": "Add easier preview controls with right-drag panning, keyboard shortcuts, view preset buttons, a larger preview-first layout, and a centered larger default window.",
+  "version": "1.3.3",
+  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.3.3/SchematicMaterialConverter.exe",
+  "sha256": "7bc9cdc629cceabd6c083d2e8dd29a61721807d5d51e467ea887f045856e5e94",
+  "notes": "Speed up previews with GPU startup verification, OpenGL back-face culling, lower-overhead HUD updates, and much lighter Tk/Pillow fallback rendering.",
   "mandatory": false
 }

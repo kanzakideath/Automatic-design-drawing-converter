@@ -27,6 +27,13 @@ import updater
 
 APP_TITLE = '設計図自動素材変換ツール'
 KEEP = '__keep__'
+GPU_PREVIEW_BLOCK_LIMIT = 140000
+GPU_PREVIEW_FACE_LIMIT = 220000
+CPU_PREVIEW_IDLE_BLOCK_LIMIT = 10000
+CPU_PREVIEW_IDLE_FACE_LIMIT = 3200
+CPU_PREVIEW_TEXTURE_FACE_LIMIT = 600
+CPU_PREVIEW_DRAG_BLOCK_LIMIT = 1800
+CPU_PREVIEW_DRAG_FACE_LIMIT = 700
 
 CATEGORY_LABELS = [
     ('recommended', 'おすすめ（同じ形）'),
@@ -49,17 +56,17 @@ CATEGORY_BY_LABEL = {label: key for key, label in CATEGORY_LABELS}
 CATEGORY_NAME = {key: label for key, label in CATEGORY_LABELS}
 
 UI = {
-    'BG': '#000000', 'SIDEBAR': '#0b0b0f', 'HEADER': '#000000',
-    'PANEL': '#1c1c1e', 'PANEL_2': '#2c2c2e', 'PANEL_3': '#3a3a3c',
-    'ROW': '#1c1c1e', 'ROW_ALT': '#242427', 'BORDER': '#38383a',
-    'BORDER_HI': '#0a84ff', 'TEXT': '#ffffff', 'TEXT_SOFT': '#f2f2f7',
-    'MUTED': '#8e8e93', 'MUTED_2': '#636366', 'ACCENT': '#0a84ff',
-    'ACCENT_2': '#64d2ff', 'ACCENT_3': '#5e5ce6', 'ACCENT_DK': '#006edb',
-    'CYAN': '#64d2ff', 'GREEN': '#30d158', 'ORANGE': '#ff9f0a',
-    'RED': '#ff453a', 'BTN_BG': '#2c2c2e', 'BTN_BG_2': '#3a3a3c',
-    'KEEP_BG': '#2c2c2e', 'TARGET_BG': '#123326', 'REC_BG': '#2d285f',
-    'HOVER': '#3a3a3c', 'CARD': '#1c1c1e', 'BADGE_BG': '#2c2c2e',
-    'BADGE_FG': '#d7e7ff', 'NBADGE_BG': '#2c2c2e', 'NBADGE_FG': '#c7c7cc',
+    'BG': '#f2f2f7', 'SIDEBAR': '#ffffff', 'HEADER': '#ffffff',
+    'PANEL': '#ffffff', 'PANEL_2': '#f7f7fb', 'PANEL_3': '#e5e5ea',
+    'ROW': '#ffffff', 'ROW_ALT': '#f7f7fb', 'BORDER': '#d1d1d6',
+    'BORDER_HI': '#007aff', 'TEXT': '#1c1c1e', 'TEXT_SOFT': '#3a3a3c',
+    'MUTED': '#8e8e93', 'MUTED_2': '#aeaeb2', 'ACCENT': '#007aff',
+    'ACCENT_2': '#5ac8fa', 'ACCENT_3': '#5856d6', 'ACCENT_DK': '#0062cc',
+    'CYAN': '#5ac8fa', 'GREEN': '#34c759', 'ORANGE': '#ff9500',
+    'RED': '#ff3b30', 'BTN_BG': '#e9e9ef', 'BTN_BG_2': '#ffffff',
+    'KEEP_BG': '#f2f2f7', 'TARGET_BG': '#e8f5ee', 'REC_BG': '#eef2ff',
+    'HOVER': '#dcecff', 'CARD': '#ffffff', 'BADGE_BG': '#e9eefc',
+    'BADGE_FG': '#0b5ed7', 'NBADGE_BG': '#f2f2f7', 'NBADGE_FG': '#3a3a3c',
 }
 UI_FONT_BOOST = 2
 
@@ -188,7 +195,7 @@ class RoundedButton(tk.Canvas):
         radius = self.radius or max(12, min(22, height // 2))
         img = Image.new('RGBA', (width * scale, height * scale), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
-        shadow = (0, 0, 0, 80)
+        shadow = (0, 0, 0, 28)
         rr = radius * scale
         draw.rounded_rectangle(
             [2 * scale, 3 * scale, width * scale - 2 * scale, height * scale - 1 * scale],
@@ -362,9 +369,14 @@ class InteractivePreview(tk.Canvas):
         h = max(150, self.winfo_height())
         try:
             large = w * h >= 260000
-            max_blocks = (6500 if large else 3200) if self._drag else (90000 if large else 70000)
-            face_limit = (2600 if large else 1600) if self._drag else (36000 if large else 24000)
-            texture_limit = 0 if self._drag else face_limit
+            if self._drag:
+                max_blocks = CPU_PREVIEW_DRAG_BLOCK_LIMIT if large else max(900, int(CPU_PREVIEW_DRAG_BLOCK_LIMIT * 0.55))
+                face_limit = CPU_PREVIEW_DRAG_FACE_LIMIT if large else max(360, int(CPU_PREVIEW_DRAG_FACE_LIMIT * 0.55))
+                texture_limit = 0
+            else:
+                max_blocks = CPU_PREVIEW_IDLE_BLOCK_LIMIT if large else max(5200, int(CPU_PREVIEW_IDLE_BLOCK_LIMIT * 0.65))
+                face_limit = CPU_PREVIEW_IDLE_FACE_LIMIT if large else max(1800, int(CPU_PREVIEW_IDLE_FACE_LIMIT * 0.65))
+                texture_limit = CPU_PREVIEW_TEXTURE_FACE_LIMIT if large else max(300, int(CPU_PREVIEW_TEXTURE_FACE_LIMIT * 0.65))
             im = self.app._render_schematic_preview(w, h, max_blocks=max_blocks,
                                                     view=self.view_state(), fast=bool(self._drag),
                                                     face_limit_override=face_limit,
@@ -515,7 +527,7 @@ class DashboardApp:
                   fieldbackground=[('readonly', UI['PANEL_2'])],
                   foreground=[('readonly', UI['TEXT'])])
         style.configure('Studio.Horizontal.TProgressbar',
-                        troughcolor='#101827', background=UI['ACCENT'],
+                        troughcolor=UI['PANEL_3'], background=UI['ACCENT'],
                         bordercolor=UI['BORDER'], lightcolor=UI['ACCENT'],
                         darkcolor=UI['ACCENT_DK'])
 
@@ -531,7 +543,7 @@ class DashboardApp:
                              state=state, **kw)
 
     def _panel(self, parent, bg=None, border=None):
-        return tk.Frame(parent, bg=bg or UI['PANEL'], highlightthickness=0,
+        return tk.Frame(parent, bg=bg or UI['PANEL'], highlightthickness=1,
                         highlightbackground=border or UI['BORDER'])
 
     def _register_drop(self, widget):
@@ -597,13 +609,13 @@ class DashboardApp:
         close.bind('<Button-1>', lambda _e: self.toggle_sidebar())
 
     def _nav_item(self, symbol, label, key, active=False):
-        bg = '#1d5dce' if active else '#0f1d2d'
+        bg = UI['ACCENT'] if active else UI['BTN_BG']
         fg = '#ffffff' if active else UI['MUTED']
         f = tk.Frame(self.sidebar, bg=UI['SIDEBAR'])
         f.pack(fill='x', padx=8, pady=4)
         item = RoundedButton(f, text=symbol + '\n' + label,
                              command=lambda k=key: self.navigate(k),
-                             bg=bg, fg=fg, active_bg='#22476d',
+                             bg=bg, fg=fg, active_bg=UI['HOVER'],
                              size=8, weight='bold' if active else 'normal',
                              padx=3, pady=5, radius=16)
         item.pack(fill='x')
@@ -612,7 +624,7 @@ class DashboardApp:
     def _set_sidebar_active(self, key):
         for name, widget in self.sidebar_items.items():
             active = name == key
-            widget.configure(bg='#1d5dce' if active else '#0f1d2d',
+            widget.configure(bg=UI['ACCENT'] if active else UI['BTN_BG'],
                              fg='#ffffff' if active else UI['MUTED'])
 
     def navigate(self, key):
@@ -640,7 +652,7 @@ class DashboardApp:
         head = tk.Frame(top, bg=UI['HEADER'])
         head.grid(row=0, column=0, sticky='ew')
         self._label(head, title, size=14, weight='bold', bg=UI['HEADER']).pack(side='left', padx=16, pady=12)
-        self._button(head, '閉じる', top.destroy, bg='#0d1726', size=8, padx=10, pady=4).pack(side='right', padx=12)
+        self._button(head, '閉じる', top.destroy, bg=UI['BTN_BG'], size=8, padx=10, pady=4).pack(side='right', padx=12)
         body = tk.Frame(top, bg=UI['BG'])
         body.grid(row=1, column=0, sticky='nsew', padx=16, pady=16)
         if modal:
@@ -702,7 +714,7 @@ class DashboardApp:
         row = self._dialog_button_row(body)
         self._button(row, '別の設計図を読み込む', self.choose_file, bg=UI['ACCENT']).pack(side='left', padx=(0, 8))
         self._button(row, '設計図フォルダを開く', self.open_source_folder, bg=UI['BTN_BG_2']).pack(side='left', padx=(0, 8))
-        self._button(row, '読み込みを解除', self.clear_loaded_file, bg='#241f58').pack(side='left')
+        self._button(row, '読み込みを解除', self.clear_loaded_file, bg=UI['BTN_BG']).pack(side='left')
 
     def open_rule_manager(self):
         _top, body = self._dialog('ルール管理', 820, 560)
@@ -724,7 +736,7 @@ class DashboardApp:
             tx.pack(side='left', fill='x', expand=True, padx=10, pady=8)
             self._label(tx, title, size=10, weight='bold', bg=UI['PANEL_2']).pack(anchor='w')
             self._label(tx, desc, size=8, fg=UI['MUTED'], bg=UI['PANEL_2']).pack(anchor='w')
-            self._button(row, '実行', cmd, bg='#28215a', padx=12, pady=5).pack(side='right', padx=10)
+            self._button(row, '実行', cmd, bg=UI['ACCENT'], fg='white', padx=12, pady=5).pack(side='right', padx=10)
 
     def open_preset_manager(self):
         _top, body = self._dialog('プリセット管理', 700, 500)
@@ -742,7 +754,7 @@ class DashboardApp:
             tx.pack(side='left', fill='x', expand=True, padx=10, pady=8)
             self._label(tx, title, size=10, weight='bold', bg=UI['PANEL_2']).pack(anchor='w')
             self._label(tx, desc, size=8, fg=UI['MUTED'], bg=UI['PANEL_2']).pack(anchor='w')
-            self._button(row, '実行', cmd, bg='#28215a', padx=12, pady=5).pack(side='right', padx=10)
+            self._button(row, '実行', cmd, bg=UI['ACCENT'], fg='white', padx=12, pady=5).pack(side='right', padx=10)
 
     def open_full_preview(self):
         if self._open_gpu_preview():
@@ -786,7 +798,7 @@ class DashboardApp:
         self._button(row, 'PNGとして保存', self.export_preview, bg=UI['ACCENT']).pack(side='left', padx=(0, 8))
         self._button(row, '建材リストPNG', self.export_materials_image, bg=UI['ACCENT']).pack(side='left', padx=(0, 8))
         self._button(row, 'CSVを書き出し', self.export_mapping_csv, bg=UI['BTN_BG_2']).pack(side='left', padx=(0, 8))
-        self._button(row, '閉じる', top.destroy, bg='#0d1726').pack(side='right')
+        self._button(row, '閉じる', top.destroy, bg=UI['BTN_BG']).pack(side='right')
 
     def open_history_dialog(self):
         _top, body = self._dialog('出力履歴', 760, 520)
@@ -806,7 +818,7 @@ class DashboardApp:
             self._label(tx, entry['path'], size=8, fg=UI['MUTED'], bg=UI['PANEL_2'],
                         wraplength=520).pack(anchor='w')
             self._button(row, 'フォルダ', lambda p=entry['path']: self.open_folder(os.path.dirname(p)),
-                         bg='#28215a').pack(side='right', padx=10)
+                         bg=UI['ACCENT'], fg='white').pack(side='right', padx=10)
 
     def open_settings_dialog(self):
         _top, body = self._dialog('設定', 700, 520)
@@ -879,7 +891,7 @@ class DashboardApp:
             tx.pack(side='left', fill='x', expand=True, padx=10, pady=8)
             self._label(tx, label, size=9, weight='bold', bg=UI['PANEL_2']).pack(anchor='w')
             self._label(tx, desc, size=7, fg=UI['MUTED'], bg=UI['PANEL_2']).pack(anchor='w')
-            self._button(row, '実行', cmd, bg='#28215a', padx=12, pady=5).pack(side='right', padx=10)
+            self._button(row, '実行', cmd, bg=UI['ACCENT'], fg='white', padx=12, pady=5).pack(side='right', padx=10)
 
     def open_validation_dialog(self, label, count):
         _top, body = self._dialog('検証: ' + label, 720, 520)
@@ -972,12 +984,19 @@ class DashboardApp:
             self.update_state.configure(text='● 更新確認中...', fg=UI['ORANGE'])
 
         def on_result(info):
-            self.root.after(0, lambda: self._finish_update_check(info, manual))
+            self._safe_after(lambda: self._finish_update_check(info, manual))
 
         def on_error(exc):
-            self.root.after(0, lambda: self._finish_update_error(exc, manual))
+            self._safe_after(lambda: self._finish_update_error(exc, manual))
 
         updater.check_for_update_async(on_result, on_error)
+
+    def _safe_after(self, callback):
+        try:
+            self.root.after(0, callback)
+            return True
+        except (RuntimeError, tk.TclError):
+            return False
 
     def _finish_update_check(self, info, manual):
         self.update_checking = False
@@ -1024,16 +1043,16 @@ class DashboardApp:
 
         def progress(value):
             pct = max(0, min(100, int(value * 100)))
-            self.root.after(0, lambda p=pct: self._sync_progress(p, '進行状況: 更新ファイルをダウンロードしています...'))
+            self._safe_after(lambda p=pct: self._sync_progress(p, '進行状況: 更新ファイルをダウンロードしています...'))
 
         def worker():
             try:
                 path = updater.download_update(info, progress)
                 updater.schedule_replace_and_restart(path)
             except Exception as exc:
-                self.root.after(0, lambda e=exc: self._update_failed(e))
+                self._safe_after(lambda e=exc: self._update_failed(e))
                 return
-            self.root.after(0, self._close_for_update)
+            self._safe_after(self._close_for_update)
 
         import threading
         threading.Thread(target=worker, daemon=True).start()
@@ -1145,15 +1164,15 @@ class DashboardApp:
         self._step_card(steps, 2, 3, '出力・適用', '結果を出力してプロジェクトに適用', current >= 3, current == 3)
 
     def _step_card(self, parent, col, no, title, desc, done, active):
-        bg = '#241f58' if active else ('#102747' if done else UI['PANEL_2'])
-        border = UI['ACCENT'] if active else ('#2457c7' if done else UI['BORDER'])
+        bg = '#e8f2ff' if active else ('#f0f9ff' if done else UI['PANEL'])
+        border = UI['ACCENT'] if active else ('#b8d8ff' if done else UI['BORDER'])
         f = self._panel(parent, bg=bg, border=border)
         f.configure(cursor='hand2')
         f.grid(row=0, column=col, sticky='ew', padx=(0 if col == 0 else 10, 0), ipady=8)
         f.grid_columnconfigure(1, weight=1)
         circle = tk.Canvas(f, width=42, height=42, bg=bg, highlightthickness=0)
         circle.grid(row=0, column=0, rowspan=2, padx=14)
-        fill = UI['ACCENT'] if active else (UI['ACCENT_2'] if done else '#354158')
+        fill = UI['ACCENT'] if active else (UI['ACCENT_2'] if done else '#d1d1d6')
         circle.create_oval(4, 4, 38, 38, fill=fill, outline='')
         circle.create_text(21, 21, text=str(no), fill='white', font=('Segoe UI', 12, 'bold'))
         self._label(f, title, size=10, weight='bold', bg=bg).grid(row=0, column=1, sticky='sw')
@@ -1172,14 +1191,14 @@ class DashboardApp:
         body.pack(fill='x', padx=12, pady=(0, 12))
 
         if self.loaded_nbt is None:
-            drop = tk.Frame(body, bg='#0c1524', highlightthickness=1, highlightbackground=UI['BORDER'])
+            drop = tk.Frame(body, bg='#f7fbff', highlightthickness=1, highlightbackground=UI['BORDER_HI'])
             drop.pack(fill='x', ipady=28)
             self._register_drop(drop)
             drop.bind('<Button-1>', lambda _e: self.choose_file())
             self._label(drop, '設計図を読み込む', size=13, weight='bold', fg=UI['TEXT_SOFT'],
-                        bg='#0c1524').pack(pady=(4, 2))
+                        bg='#f7fbff').pack(pady=(4, 2))
             self._label(drop, self._default_drop_text(), size=8, fg=UI['MUTED'],
-                        bg='#0c1524', justify='center').pack()
+                        bg='#f7fbff', justify='center').pack()
         else:
             row = tk.Frame(body, bg=UI['PANEL'])
             row.pack(fill='x')
@@ -1211,7 +1230,7 @@ class DashboardApp:
         head.pack(fill='x', padx=12, pady=(10, 6))
         self._label(head, 'クイックプリセット', size=10, weight='bold').pack(side='left')
         self._button(head, '管理', self.open_preset_manager,
-                     bg='#0d1726', size=8, padx=8, pady=2).pack(side='right')
+                     bg=UI['BTN_BG'], size=8, padx=8, pady=2).pack(side='right')
         for mark, title, desc, cmd in [
             ('◆', 'バニラ・サバイバル用', '入手しやすい素材に変換', self.apply_default_preset),
             ('◇', 'バニラ・建築向け', '景観を崩さず自然な置換', self.apply_architecture_preset),
@@ -1256,8 +1275,8 @@ class DashboardApp:
         text.pack(side='left', fill='x', expand=True, pady=4)
         self._label(text, title, size=8, weight='bold', bg=UI['PANEL_2']).pack(anchor='w')
         self._label(text, desc, size=6, fg=UI['MUTED'], bg=UI['PANEL_2']).pack(anchor='w')
-        self._button(f, '適用' if 'カスタム' not in title else '保存', cmd, bg='#28215a',
-                     size=8, padx=8, pady=2).pack(side='right', padx=8)
+        self._button(f, '適用' if 'カスタム' not in title else '保存', cmd, bg=UI['ACCENT'],
+                     fg='white', size=8, padx=8, pady=2).pack(side='right', padx=8)
 
     def _build_mapping_panel(self):
         panel = self._panel(self.center_col)
@@ -1268,9 +1287,9 @@ class DashboardApp:
         head = tk.Frame(panel, bg=UI['PANEL'])
         head.grid(row=0, column=0, sticky='ew', padx=12, pady=(10, 6))
         self._label(head, 'ブロック / 素材マッピング', size=10, weight='bold').pack(side='left')
-        self._button(head, '✦ 自動マッピング', self.apply_default_preset, bg='#241f58',
-                     size=8, padx=10, pady=4).pack(side='right', padx=(6, 0))
-        self._button(head, '+ ルールを追加', self.add_manual_rule, bg='#0f1c31',
+        self._button(head, '✦ 自動マッピング', self.apply_default_preset, bg=UI['ACCENT'],
+                     fg='white', size=8, padx=10, pady=4).pack(side='right', padx=(6, 0))
+        self._button(head, '+ ルールを追加', self.add_manual_rule, bg=UI['BTN_BG'],
                      size=8, padx=10, pady=4).pack(side='right')
 
         chips = tk.Frame(panel, bg=UI['PANEL'])
@@ -1282,11 +1301,11 @@ class DashboardApp:
         table.grid(row=2, column=0, sticky='nsew', padx=12)
         table.grid_rowconfigure(1, weight=1)
         table.grid_columnconfigure(0, weight=1)
-        hdr = tk.Frame(table, bg='#0f1726')
+        hdr = tk.Frame(table, bg=UI['PANEL_2'])
         hdr.grid(row=0, column=0, sticky='ew')
         for i, (text, w) in enumerate([('元のブロック', 20), ('', 2), ('変換後の素材', 22),
                                        ('方法', 8), ('状態', 7), ('', 3)]):
-            tk.Label(hdr, text=text, bg='#0f1726', fg=UI['MUTED'], width=w,
+            tk.Label(hdr, text=text, bg=UI['PANEL_2'], fg=UI['MUTED'], width=w,
                      font=('Yu Gothic UI', 8), anchor='w').grid(row=0, column=i, sticky='ew', padx=4, pady=6)
 
         self.map_canvas = tk.Canvas(table, bg=UI['PANEL'], highlightthickness=0)
@@ -1303,11 +1322,11 @@ class DashboardApp:
 
         bulk = tk.Frame(panel, bg=UI['PANEL'])
         bulk.grid(row=3, column=0, sticky='ew', padx=12, pady=(10, 12))
-        self._button(bulk, '未設定を自動割り当て', self.apply_default_preset, bg='#101b2c',
+        self._button(bulk, '未設定を自動割り当て', self.apply_default_preset, bg=UI['BTN_BG'],
                      size=8, padx=10, pady=5).pack(side='left', padx=(0, 6))
-        self._button(bulk, 'すべてリセット', self.reset_mappings, bg='#101b2c',
+        self._button(bulk, 'すべてリセット', self.reset_mappings, bg=UI['BTN_BG'],
                      size=8, padx=10, pady=5).pack(side='left', padx=6)
-        self._button(bulk, '未使用ルールを削除', self.clean_unused_rules, bg='#101b2c',
+        self._button(bulk, '未使用ルールを削除', self.clean_unused_rules, bg=UI['BTN_BG'],
                      size=8, padx=10, pady=5).pack(side='left', padx=6)
         self._label(bulk, self._conflict_summary(), size=9,
                     fg=UI['ORANGE'] if self._conflict_count() else UI['GREEN']).pack(side='right')
@@ -1345,7 +1364,7 @@ class DashboardApp:
             ('横', (-90.0, 0.20, 1.65)),
         ]:
             self._button(viewbar, label, lambda a=args: self._preview_set_view(*a),
-                         bg='#0f1c31', size=8, padx=10, pady=4).pack(side='left', padx=(0, 6))
+                         bg=UI['BTN_BG'], size=8, padx=10, pady=4).pack(side='left', padx=(0, 6))
         self._button(viewbar, '＋', lambda: self._preview_zoom(1.16),
                      bg=UI['BTN_BG_2'], size=9, padx=10, pady=4).pack(side='right', padx=(6, 0))
         self._button(viewbar, '−', lambda: self._preview_zoom(1 / 1.16),
@@ -1374,10 +1393,10 @@ class DashboardApp:
         bottom = tk.Frame(actions, bg=UI['PANEL'])
         bottom.pack(fill='x', pady=(8, 0))
         self._button(bottom, '⇩ プレビューを書き出し', self.export_preview,
-                     bg='#0f1c31', size=8, pady=6).pack(side='left', fill='x', expand=True)
+                     bg=UI['BTN_BG'], size=8, pady=6).pack(side='left', fill='x', expand=True)
         self._button(bottom, '建材リスト', self.export_materials_image,
-                     bg='#0f1c31', size=8, padx=10, pady=6).pack(side='left', padx=(6, 0))
-        self._button(bottom, '⌄', self.open_export_menu, bg='#0f1c31', size=8, padx=10, pady=6).pack(side='right', padx=(6, 0))
+                     bg=UI['BTN_BG'], size=8, padx=10, pady=6).pack(side='left', padx=(6, 0))
+        self._button(bottom, '⌄', self.open_export_menu, bg=UI['BTN_BG'], size=8, padx=10, pady=6).pack(side='right', padx=(6, 0))
 
     def _build_footer(self):
         self.footer.grid_columnconfigure(1, weight=1)
@@ -1394,7 +1413,7 @@ class DashboardApp:
         note_box = tk.Frame(self.footer, bg=UI['HEADER'])
         note_box.grid(row=0, column=4, sticky='e', padx=12)
         self._label(note_box, 'メモ', size=7, fg=UI['MUTED'], bg=UI['HEADER']).pack(anchor='w')
-        tk.Entry(note_box, textvariable=self.note_var, bg='#0f1828', fg=UI['TEXT'],
+        tk.Entry(note_box, textvariable=self.note_var, bg=UI['PANEL_2'], fg=UI['TEXT'],
                  insertbackground=UI['TEXT'], relief='flat', width=32,
                  font=('Yu Gothic UI', 8)).pack()
 
@@ -1636,8 +1655,8 @@ class DashboardApp:
     def _filter_chip(self, parent, key, label, count):
         active = self.active_filter == key
         self._button(parent, '%s  %s' % (label, count), lambda k=key: self.set_filter(k),
-                     bg=('#1e2a67' if active else '#0e192a'),
-                     fg=('#cdd7ff' if active else UI['TEXT_SOFT']), size=8,
+                     bg=(UI['ACCENT'] if active else UI['BTN_BG']),
+                     fg=('white' if active else UI['TEXT_SOFT']), size=8,
                      padx=9, pady=4).pack(side='left', padx=(0, 6))
 
     def _build_rows(self):
@@ -1700,9 +1719,9 @@ class DashboardApp:
 
     def _status_badge(self, parent, _conv, target):
         if target == KEEP:
-            text, fg, bg = '未設定', UI['ORANGE'], '#2a2418'
+            text, fg, bg = '未設定', UI['ORANGE'], '#fff4df'
         else:
-            text, fg, bg = '適用', UI['GREEN'], '#123326'
+            text, fg, bg = '適用', UI['GREEN'], '#e8f7ec'
         return tk.Label(parent, text=text, bg=bg, fg=fg, width=6,
                         font=('Yu Gothic UI', 8, 'bold'), padx=3, pady=3)
 
@@ -1809,19 +1828,19 @@ class DashboardApp:
         ]:
             self._metric_line(self.preview_body, label, str(value))
 
-        warn = tk.Frame(self.preview_body, bg='#2a2418', highlightthickness=1, highlightbackground='#8d6b24')
+        warn = tk.Frame(self.preview_body, bg='#fff8e8', highlightthickness=1, highlightbackground='#ffd58a')
         warn.pack(fill='x', pady=(10, 0))
-        self._label(warn, '検証結果', size=9, weight='bold', bg='#2a2418').pack(anchor='w', padx=10, pady=(8, 2))
+        self._label(warn, '検証結果', size=9, weight='bold', bg='#fff8e8').pack(anchor='w', padx=10, pady=(8, 2))
         self._validation_line(warn, '競合するルール', stats['conflicts'], '詳細')
         self._validation_line(warn, '未設定のブロック', stats['unset'], '確認')
         self._validation_line(warn, '非対応ブロック', 0, '✓')
 
     def _stat_box(self, parent, title, value, delta):
-        f = tk.Frame(parent, bg='#0f1828')
+        f = tk.Frame(parent, bg='#f7f7fb', highlightthickness=1, highlightbackground=UI['BORDER'])
         f.pack(side='left', fill='x', expand=True, padx=(0, 8), pady=(0, 8))
-        self._label(f, title, size=7, fg=UI['MUTED'], bg='#0f1828').pack(anchor='w', padx=8, pady=(7, 0))
-        self._label(f, str(value), size=14, weight='bold', bg='#0f1828').pack(anchor='w', padx=8)
-        self._label(f, delta, size=7, fg=UI['GREEN'], bg='#0f1828').pack(anchor='e', padx=8, pady=(0, 6))
+        self._label(f, title, size=7, fg=UI['MUTED'], bg='#f7f7fb').pack(anchor='w', padx=8, pady=(7, 0))
+        self._label(f, str(value), size=14, weight='bold', bg='#f7f7fb').pack(anchor='w', padx=8)
+        self._label(f, delta, size=7, fg=UI['GREEN'], bg='#f7f7fb').pack(anchor='e', padx=8, pady=(0, 6))
 
     def _metric_line(self, parent, label, value):
         f = tk.Frame(parent, bg=UI['PANEL'])
@@ -1830,13 +1849,13 @@ class DashboardApp:
         self._label(f, value, size=8, fg=UI['TEXT_SOFT'], weight='bold').pack(side='right')
 
     def _validation_line(self, parent, label, count, action):
-        f = tk.Frame(parent, bg='#2a2418')
+        f = tk.Frame(parent, bg='#fff8e8')
         f.pack(fill='x', padx=10, pady=3)
         color = UI['ORANGE'] if count else UI['GREEN']
-        self._label(f, '● ' + label, size=8, fg=color, bg='#2a2418').pack(side='left')
-        self._label(f, '%s 件' % count, size=8, bg='#2a2418').pack(side='left', padx=(16, 0))
+        self._label(f, '● ' + label, size=8, fg=color, bg='#fff8e8').pack(side='left')
+        self._label(f, '%s 件' % count, size=8, bg='#fff8e8').pack(side='left', padx=(16, 0))
         self._button(f, action, lambda l=label, c=count: self.open_validation_dialog(l, c),
-                     bg='#332a52', size=7, padx=8, pady=2).pack(side='right')
+                     bg=UI['BTN_BG'], size=7, padx=8, pady=2).pack(side='right')
 
     # ---------------------------------------------------------------- picker
     def open_picker(self, rowdata):
@@ -2388,7 +2407,7 @@ class DashboardApp:
         return rec[0], rec[1], rec[2], rec[3], props
 
     def _gpu_preview_payload(self):
-        records = self._render_records(max_blocks=10 ** 9)
+        records = self._render_records(max_blocks=GPU_PREVIEW_BLOCK_LIMIT)
         occupied = self._source_occupied_positions()
         bounds = self._record_bounds(records)
         atlas, tile_map = self._gpu_texture_atlas(records)
@@ -2409,9 +2428,10 @@ class DashboardApp:
             'bounds': bounds,
             'atlas': atlas,
             'atlas_uvs': atlas['uvs'],
-            'max_faces': 650000,
+            'max_faces': GPU_PREVIEW_FACE_LIMIT,
             'width': 1280,
             'height': 760,
+            'startup_timeout': 4.5,
         }
 
     def _gpu_texture_atlas(self, records):
@@ -2499,7 +2519,8 @@ class DashboardApp:
         key = ('loaded', w, h, self.src_path, icons.minecraft_assets_label())
         if key in self.image_cache:
             return self.image_cache[key]
-        im = self._render_schematic_preview(w, h, max_blocks=45000, fast=False)
+        im = self._render_schematic_preview(w, h, max_blocks=18000, fast=True,
+                                            face_limit_override=2800, texture_limit=0)
         img = ImageTk.PhotoImage(im)
         self.image_cache[key] = img
         return img
@@ -2509,7 +2530,8 @@ class DashboardApp:
                icons.minecraft_assets_label())
         if key in self.image_cache:
             return self.image_cache[key]
-        im = self._render_schematic_preview(w, h, max_blocks=60000, fast=False)
+        im = self._render_schematic_preview(w, h, max_blocks=22000, fast=True,
+                                            face_limit_override=3600, texture_limit=0)
         img = ImageTk.PhotoImage(im)
         self.image_cache[key] = img
         return img
