@@ -507,7 +507,7 @@ class GpuPreviewWindow:
 
     def _pan_orbit(self, dx, dy):
         right, up = self._camera_basis()
-        scale = (self.distance / max(0.2, self.zoom)) / float(max(320, self.window.width)) * 1.35
+        scale = (self.distance / max(0.2, self.zoom)) / float(max(320, self.window.width)) * 0.95
         self.target = (
             self.target[0] - right[0] * dx * scale + up[0] * dy * scale,
             self.target[1] - right[1] * dx * scale + up[1] * dy * scale,
@@ -599,11 +599,11 @@ class GpuPreviewWindow:
                                      or (buttons & mouse.LEFT and mods & key.MOD_SHIFT)):
             self._pan_orbit(dx, dy)
         elif buttons & mouse.LEFT:
-            self.yaw += dx * 0.22
-            self.pitch = max(-18.0, min(82.0, self.pitch + dy * 0.18))
+            self.yaw += dx * 0.15
+            self.pitch = max(-12.0, min(78.0, self.pitch + dy * 0.12))
 
     def on_mouse_scroll(self, _x, _y, _sx, sy):
-        self.zoom = max(0.18, min(8.0, self.zoom * (1.09 ** sy)))
+        self.zoom = max(0.18, min(8.0, self.zoom * (1.06 ** sy)))
 
     def on_key_press(self, symbol, _mods):
         key = self.pyglet.window.key
@@ -622,6 +622,24 @@ class GpuPreviewWindow:
             self.mode = 'walk' if self.mode == 'orbit' else 'orbit'
             if self.mode == 'walk':
                 self.pitch = 8.0
+            self._overlay_dirty = True
+        elif self.mode == 'orbit' and symbol == key.LEFT:
+            self.yaw -= 8.0
+            self._overlay_dirty = True
+        elif self.mode == 'orbit' and symbol == key.RIGHT:
+            self.yaw += 8.0
+            self._overlay_dirty = True
+        elif self.mode == 'orbit' and symbol == key.UP:
+            self.pitch = min(78.0, self.pitch + 5.0)
+            self._overlay_dirty = True
+        elif self.mode == 'orbit' and symbol == key.DOWN:
+            self.pitch = max(-12.0, self.pitch - 5.0)
+            self._overlay_dirty = True
+        elif name in ('PLUS', 'EQUAL', 'NUM_ADD', 'NUM_PLUS'):
+            self.zoom = max(0.18, min(8.0, self.zoom * 1.12))
+            self._overlay_dirty = True
+        elif name in ('MINUS', 'NUM_SUBTRACT', 'NUM_MINUS'):
+            self.zoom = max(0.18, min(8.0, self.zoom / 1.12))
             self._overlay_dirty = True
         elif symbol in (key._1, key.NUM_1):
             self.mode = 'orbit'

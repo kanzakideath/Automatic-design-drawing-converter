@@ -1,7 +1,7 @@
 {
-  "version": "1.3.6",
-  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.3.6/SchematicMaterialConverter.exe",
-  "sha256": "277d432b97bcd2747920fd1df056ad3f047737fb98be4f8b914f4608be4f1895",
-  "notes": "Replace particle-like preview sampling with a contiguous textured structure crop, texture all visible right-preview faces, render slab/rail/button/fence/pane-style shapes in the preview, and raise the GPU preview block budget so large builds keep their real structure.",
+  "version": "1.3.7",
+  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.3.7/SchematicMaterialConverter.exe",
+  "sha256": "5b20d4d76e2bbc1d04a521cb0f2ecc3b04d09d67ba8a26fe407c5f08cbc7407b",
+  "notes": "Refresh the main UI around a larger preview-first layout, keep the primary conversion action visible under the preview, widen the preview column, and make the GPU preview easier to operate with gentler orbit, pan, and zoom controls.",
   "mandatory": false
 }

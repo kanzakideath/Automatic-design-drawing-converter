@@ -637,7 +637,7 @@ class DashboardApp:
     def _build_ui(self):
         self.root.title(APP_TITLE)
         self.root.configure(bg=UI['BG'])
-        win_w, win_h = self._set_centered_geometry(self.root, 1600, 940)
+        win_w, win_h = self._set_centered_geometry(self.root, 1760, 980)
         self.root.minsize(min(1180, win_w), min(760, win_h))
         self.root.grid_rowconfigure(1, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
@@ -1207,9 +1207,9 @@ class DashboardApp:
 
         self.content = tk.Frame(self.main, bg=UI['BG'])
         self.content.grid(row=1, column=0, sticky='nsew', pady=(10, 0))
-        self.content.grid_columnconfigure(0, minsize=230)
-        self.content.grid_columnconfigure(1, weight=1)
-        self.content.grid_columnconfigure(2, minsize=560)
+        self.content.grid_columnconfigure(0, minsize=255, weight=0)
+        self.content.grid_columnconfigure(1, minsize=500, weight=2)
+        self.content.grid_columnconfigure(2, minsize=720, weight=3)
         self.content.grid_rowconfigure(0, weight=1)
 
         self.left_col = tk.Frame(self.content, bg=UI['BG'])
@@ -1406,13 +1406,13 @@ class DashboardApp:
         panel = self._panel(self.right_col)
         panel.grid(row=0, column=0, sticky='nsew')
         panel.grid_columnconfigure(0, weight=1)
-        panel.grid_rowconfigure(1, weight=3)
-        panel.grid_rowconfigure(5, weight=1)
+        panel.grid_rowconfigure(1, minsize=285, weight=10)
+        panel.grid_rowconfigure(6, minsize=0, weight=0)
         self._label(panel, '変換結果プレビュー', size=10, weight='bold').grid(
             row=0, column=0, sticky='w', padx=12, pady=(10, 6))
         self._label(panel, '● リアルタイム更新', size=8, fg=UI['GREEN']).grid(
             row=0, column=0, sticky='e', padx=12, pady=(10, 6))
-        self.preview_view = InteractivePreview(panel, self, width=448, height=300)
+        self.preview_view = InteractivePreview(panel, self, width=680, height=430)
         self.preview_view.grid(row=1, column=0, sticky='nsew', padx=12, pady=(0, 10))
 
         controls = tk.Frame(panel, bg=UI['PANEL'])
@@ -1441,8 +1441,15 @@ class DashboardApp:
         self._button(viewbar, '−', lambda: self._preview_zoom(1 / 1.16),
                      bg=UI['BTN_BG_2'], size=9, padx=10, pady=4).pack(side='right')
 
+        primary = tk.Frame(panel, bg=UI['PANEL'])
+        primary.grid(row=4, column=0, sticky='ew', padx=12, pady=(0, 8))
+        self.start_btn = self._button(primary, '▶ 変換を実行', self.do_convert, bg=UI['ACCENT'],
+                                      fg='white', size=11, padx=12, pady=9,
+                                      state='normal' if self.loaded_nbt is not None else 'disabled')
+        self.start_btn.pack(fill='x')
+
         tabs = tk.Frame(panel, bg=UI['PANEL'])
-        tabs.grid(row=4, column=0, sticky='ew', padx=12, pady=(0, 8))
+        tabs.grid(row=5, column=0, sticky='ew', padx=12, pady=(0, 8))
         self.preview_tab_buttons = {}
         for key, label in [('overview', '概要'), ('materials', '必要素材'), ('stats', '詳細統計')]:
             btn = self._button(tabs, label, lambda k=key: self.set_preview_tab(k),
@@ -1452,17 +1459,13 @@ class DashboardApp:
             self.preview_tab_buttons[key] = btn
 
         self.preview_body = tk.Frame(panel, bg=UI['PANEL'])
-        self.preview_body.grid(row=5, column=0, sticky='nsew', padx=12)
+        self.preview_body.grid(row=6, column=0, sticky='nsew', padx=12)
         self._build_preview_body()
 
         actions = tk.Frame(panel, bg=UI['PANEL'])
-        actions.grid(row=6, column=0, sticky='ew', padx=12, pady=(8, 12))
-        self.start_btn = self._button(actions, '▶ 変換を実行', self.do_convert, bg=UI['ACCENT'],
-                                      fg='white', size=11, padx=12, pady=10,
-                                      state='normal' if self.loaded_nbt is not None else 'disabled')
-        self.start_btn.pack(fill='x')
+        actions.grid(row=7, column=0, sticky='ew', padx=12, pady=(8, 12))
         bottom = tk.Frame(actions, bg=UI['PANEL'])
-        bottom.pack(fill='x', pady=(8, 0))
+        bottom.pack(fill='x')
         self._button(bottom, '⇩ プレビューを書き出し', self.export_preview,
                      bg=UI['BTN_BG'], size=8, pady=6).pack(side='left', fill='x', expand=True)
         self._button(bottom, '建材リスト', self.export_materials_image,
