@@ -1,7 +1,7 @@
 {
-  "version": "1.2.3",
-  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.2.3/SchematicMaterialConverter.exe",
-  "sha256": "f4c892a484bfd2a601ce8c6f44d5646070bab5d0f5c3a8800fc864867f1da4eb",
-  "notes": "Generate a Minecraft-style dark material list image with four-column cards, block icons, and large item counts.",
+  "version": "1.2.4",
+  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.2.4/SchematicMaterialConverter.exe",
+  "sha256": "3a5184d85385bae41b832b6714bc599f6b3b5c5283172c310ebc47918a49ee08",
+  "notes": "Improve Japanese block names, fix preview tab highlighting, and make the live 3D preview much lighter and non-blocking.",
   "mandatory": false
 }

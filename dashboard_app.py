@@ -223,7 +223,8 @@ class InteractivePreview(tk.Canvas):
         self.bind('<ButtonRelease-1>', lambda _e: setattr(self, '_drag', None))
         self.bind('<MouseWheel>', self._on_wheel)
         self.bind('<Double-Button-1>', self.toggle_mode)
-        self.refresh(immediate=True)
+        self._draw_loading(width, height)
+        self.refresh()
 
     def _on_enter(self, _event):
         self.app._wheel_target = None
@@ -268,7 +269,7 @@ class InteractivePreview(tk.Canvas):
         if immediate:
             self._render()
         else:
-            self._after_id = self.after(55, self._render)
+            self._after_id = self.after(8, self._render)
 
     def view_state(self):
         return {
@@ -282,11 +283,25 @@ class InteractivePreview(tk.Canvas):
         self._after_id = None
         w = max(260, self.winfo_width())
         h = max(150, self.winfo_height())
-        im = self.app._render_schematic_preview(w, h, max_blocks=6500, view=self.view_state())
-        self._photo = ImageTk.PhotoImage(im)
+        try:
+            max_blocks = 520 if self._drag else 980
+            im = self.app._render_schematic_preview(w, h, max_blocks=max_blocks,
+                                                    view=self.view_state(), fast=True)
+            self._photo = ImageTk.PhotoImage(im)
+            self.delete('all')
+            self.create_image(0, 0, image=self._photo, anchor='nw')
+            self._draw_overlay(w, h)
+        except Exception as exc:
+            self.delete('all')
+            self.create_rectangle(0, 0, w, h, fill='#101820', outline='#4d79ff')
+            self.create_text(w / 2, h / 2, text='プレビュー生成中に失敗しました\n%s' % exc,
+                             fill='#ffffff', font=('Yu Gothic UI', 9), justify='center')
+
+    def _draw_loading(self, w, h):
         self.delete('all')
-        self.create_image(0, 0, image=self._photo, anchor='nw')
-        self._draw_overlay(w, h)
+        self.create_rectangle(0, 0, w, h, fill='#101820', outline='#4d79ff')
+        self.create_text(w / 2, h / 2, text='プレビュー準備中...', fill='#ffffff',
+                         font=('Yu Gothic UI', 10, 'bold'))
 
     def _draw_overlay(self, w, h):
         mode_text = '内部視点' if self.mode == 'walk' else '外観'
@@ -381,6 +396,7 @@ class DashboardApp:
         self.focus_mode = False
         self.sidebar_collapsed = False
         self.sidebar_items = {}
+        self.preview_tab_buttons = {}
         self.pending_update = None
         self.update_checking = False
         self.update_notified = False
@@ -1202,10 +1218,13 @@ class DashboardApp:
 
         tabs = tk.Frame(panel, bg=UI['PANEL'])
         tabs.grid(row=3, column=0, sticky='ew', padx=12, pady=(0, 8))
+        self.preview_tab_buttons = {}
         for key, label in [('overview', '概要'), ('materials', '必要素材'), ('stats', '詳細統計')]:
-            self._button(tabs, label, lambda k=key: self.set_preview_tab(k),
-                         bg=(UI['ACCENT'] if self.preview_tab == key else UI['BTN_BG']),
-                         size=8, padx=16, pady=5).pack(side='left', fill='x', expand=True, padx=(0, 4))
+            btn = self._button(tabs, label, lambda k=key: self.set_preview_tab(k),
+                               bg=(UI['ACCENT'] if self.preview_tab == key else UI['BTN_BG']),
+                               size=8, padx=16, pady=5)
+            btn.pack(side='left', fill='x', expand=True, padx=(0, 4))
+            self.preview_tab_buttons[key] = btn
 
         self.preview_body = tk.Frame(panel, bg=UI['PANEL'])
         self.preview_body.grid(row=4, column=0, sticky='nsew', padx=12)
@@ -1579,8 +1598,18 @@ class DashboardApp:
 
     def set_preview_tab(self, key):
         self.preview_tab = key
+        self._update_preview_tabs()
         if hasattr(self, 'preview_body'):
             self._build_preview_body()
+
+    def _update_preview_tabs(self):
+        for key, btn in getattr(self, 'preview_tab_buttons', {}).items():
+            active = self.preview_tab == key
+            try:
+                btn.configure(bg=UI['ACCENT'] if active else UI['BTN_BG'],
+                              fg='white' if active else UI['TEXT'])
+            except tk.TclError:
+                pass
 
     def _set_preview_mode(self, mode):
         if hasattr(self, 'preview_view'):
@@ -2202,7 +2231,7 @@ class DashboardApp:
         key = ('loaded', w, h, self.src_path, icons.minecraft_assets_label())
         if key in self.image_cache:
             return self.image_cache[key]
-        im = self._render_schematic_preview(w, h, max_blocks=900)
+        im = self._render_schematic_preview(w, h, max_blocks=480, fast=True)
         img = ImageTk.PhotoImage(im)
         self.image_cache[key] = img
         return img
@@ -2212,29 +2241,33 @@ class DashboardApp:
                icons.minecraft_assets_label())
         if key in self.image_cache:
             return self.image_cache[key]
-        im = self._render_schematic_preview(w, h)
+        im = self._render_schematic_preview(w, h, max_blocks=1800, fast=True)
         img = ImageTk.PhotoImage(im)
         self.image_cache[key] = img
         return img
 
-    def _render_schematic_preview(self, w, h, max_blocks=12000, view=None):
+    def _render_schematic_preview(self, w, h, max_blocks=3000, view=None, fast=False):
+        if fast:
+            max_blocks = min(max_blocks, 1000)
         im = Image.new('RGB', (w, h), '#87c9ff')
         d = ImageDraw.Draw(im)
         records = self._render_records(max_blocks=max_blocks)
         bounds = self._record_bounds(records)
         camera = self._minecraft_camera(bounds, w, h, view=view)
         self._draw_minecraft_sky(d, w, h)
-        self._draw_superflat_ground(d, w, h, camera, bounds)
+        self._draw_superflat_ground(d, w, h, camera, bounds, fast=fast)
         if not records:
             self._draw_empty_preview(im, d, w, h, camera, bounds)
             d.rectangle([0, 0, w - 1, h - 1], outline='#4d79ff')
             return im
 
-        self._draw_build_shadow(d, records, camera, w, h)
+        self._draw_build_shadow(d, records, camera, w, h, fast=fast)
         faces = self._visible_block_faces(records, camera)
         for depth, poly, bid, normal, seed in faces:
-            self._draw_minecraft_face(im, d, poly, self._block_rgb(bid), normal, seed, bid)
-        self._draw_scene_vignette(d, w, h)
+            self._draw_minecraft_face(im, d, poly, self._block_rgb(bid), normal, seed, bid,
+                                      textured=not fast)
+        if not fast:
+            self._draw_scene_vignette(d, w, h)
         d.rectangle([0, 0, w - 1, h - 1], outline='#4d79ff')
         return im
 
@@ -2321,15 +2354,15 @@ class DashboardApp:
                 draw.rectangle([x + ox * unit, y + oy * unit, x + (ox + ww) * unit, y + (oy + hh) * unit],
                                fill='#ffffff')
 
-    def _draw_superflat_ground(self, draw, w, h, camera, bounds):
+    def _draw_superflat_ground(self, draw, w, h, camera, bounds, fast=False):
         horizon = int(h * 0.58)
         draw.rectangle([0, horizon, w, h], fill='#7ac943')
-        extent = max(38, int(max(bounds['span_x'], bounds['span_z']) * 2.8))
+        extent = max(38, int(max(bounds['span_x'], bounds['span_z']) * (2.0 if fast else 2.8)))
         cx, cz = bounds['cx'], bounds['cz']
         x0, x1 = int(cx - extent), int(cx + extent)
         z0, z1 = int(cz - extent), int(cz + extent)
         cells = []
-        step = max(2, extent // 18)
+        step = max(4 if fast else 2, extent // (10 if fast else 18))
         for x in range(x0, x1, step):
             cells.append(((x, -0.02, z0), (x, -0.02, z1)))
         for z in range(z0, z1, step):
@@ -2341,25 +2374,26 @@ class DashboardApp:
                 line_y = max(pa[1], pb[1])
                 color = '#70c944' if line_y < h * 0.76 else '#62b63b'
                 draw.line([(pa[0], pa[1]), (pb[0], pb[1])], fill=color, width=1)
-        random.seed(1127)
-        for _ in range(max(45, w * h // 9000)):
-            gx = random.uniform(x0, x1)
-            gz = random.uniform(z0, z1)
-            p = self._project3((gx, 0.0, gz), camera)
-            if p and horizon <= p[1] <= h:
-                shade = random.choice(['#86d84d', '#6fbd3e', '#8bd653', '#5ba737'])
-                size = 1 if p[1] < h * 0.72 else 2
-                draw.rectangle([p[0], p[1], p[0] + size, p[1] + size], fill=shade)
-        for i in range(10):
+        if not fast:
+            random.seed(1127)
+            for _ in range(max(45, w * h // 9000)):
+                gx = random.uniform(x0, x1)
+                gz = random.uniform(z0, z1)
+                p = self._project3((gx, 0.0, gz), camera)
+                if p and horizon <= p[1] <= h:
+                    shade = random.choice(['#86d84d', '#6fbd3e', '#8bd653', '#5ba737'])
+                    size = 1 if p[1] < h * 0.72 else 2
+                    draw.rectangle([p[0], p[1], p[0] + size, p[1] + size], fill=shade)
+        for i in range(4 if fast else 10):
             y = horizon + i
             draw.line([(0, y), (w, y)], fill=(128 + i, 199 + i, 116 + i))
 
-    def _draw_build_shadow(self, draw, records, camera, w, h):
+    def _draw_build_shadow(self, draw, records, camera, w, h, fast=False):
         footprint = {}
         for x, y, z, _bid in records:
             if y == 0:
                 footprint[(x, z)] = True
-        for x, z in list(footprint.keys())[:3500]:
+        for x, z in list(footprint.keys())[:700 if fast else 3500]:
             corners = [(x + 0.18, 0.005, z + 0.18), (x + 1.05, 0.005, z + 0.26),
                        (x + 0.90, 0.005, z + 1.05), (x + 0.04, 0.005, z + 0.92)]
             pts = [self._project3(p, camera) for p in corners]
@@ -2396,7 +2430,7 @@ class DashboardApp:
         faces.sort(key=lambda f: f[0], reverse=True)
         return faces
 
-    def _draw_minecraft_face(self, canvas, draw, poly, color, normal, seed, bid):
+    def _draw_minecraft_face(self, canvas, draw, poly, color, normal, seed, bid, textured=True):
         light = self._v_norm((-0.35, 0.82, -0.46))
         dot = max(0.0, self._v_dot(normal, light))
         if normal[1] > 0:
@@ -2407,7 +2441,7 @@ class DashboardApp:
         outline = self._shade(color, 0.38)
         size = max(max(p[0] for p in poly) - min(p[0] for p in poly),
                    max(p[1] for p in poly) - min(p[1] for p in poly))
-        if size >= 6:
+        if textured and size >= 6:
             try:
                 tex = icons.block_texture_image(bid, top=normal[1] > 0)
             except Exception:
