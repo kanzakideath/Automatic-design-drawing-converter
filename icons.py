@@ -1,17 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-ブロックのアイコンを手続き的に生成する（Pillow 使用）。
+ブロックのアイコンを生成する（Pillow 使用）。
 
-Mojang のテクスチャは一切使わず、素材ごとの色とドット模様で 16x16 のテクスチャを自前生成し、
-それをアイソメトリック（マイクラのインベントリ風）の立体ブロックに貼り付けて描く。
+ローカルの Minecraft assets が見つかる場合は models/blockstates/textures を読んで実テクスチャを使う。
+見つからない環境では、素材ごとの色とドット模様で 16x16 のテクスチャを自前生成してフォールバックする。
 形（階段・ハーフ・塀・ドア等）ごとに見た目を変えて区別しやすくする。
 """
 
 import zlib
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageChops, ImageDraw
 
 import blockdata as bd
+
+try:
+    import minecraft_assets
+except Exception:
+    minecraft_assets = None
 
 TPX = 16  # テクスチャ解像度
 
@@ -227,12 +232,38 @@ def _make_texture(style, color, key, top=False):
 _TEX_CACHE = {}
 
 
+def using_minecraft_assets():
+    return bool(minecraft_assets and minecraft_assets.available())
+
+
+def minecraft_assets_label():
+    if not minecraft_assets:
+        return ''
+    return minecraft_assets.root_label()
+
+
+def _asset_texture(base, top=False):
+    if not minecraft_assets:
+        return None
+    try:
+        return minecraft_assets.get_block_texture(base, top=top)
+    except Exception:
+        return None
+
+
 def _texture(base, color, top=False):
-    style = _tex_style(base)
-    key = (style, color, top)
+    key = (base, color, top, using_minecraft_assets())
     if key not in _TEX_CACHE:
-        _TEX_CACHE[key] = _make_texture(style, color, base, top)
+        tex = _asset_texture(base, top=top)
+        if tex is None:
+            tex = _make_texture(_tex_style(base), color, base, top)
+        _TEX_CACHE[key] = tex
     return _TEX_CACHE[key]
+
+
+def block_texture_image(bid, top=False):
+    base = bd.strip_ns(bid)
+    return _texture(base, bd.base_color(bid), top=top).copy()
 
 
 # ---------------------------------------------------------------------------
@@ -263,6 +294,10 @@ def _paste_face(canvas, tex, O, u, v, outline=True):
     mask = Image.new('L', canvas.size, 0)
     poly = [(Ox, Oy), (Ox + ux, Oy + uy), (Ox + ux + vx, Oy + uy + vy), (Ox + vx, Oy + vy)]
     ImageDraw.Draw(mask).polygon(poly, fill=255)
+    if warped.mode == 'RGBA':
+        alpha = warped.getchannel('A')
+        if alpha.getextrema() != (255, 255):
+            mask = ImageChops.multiply(mask, alpha)
     canvas.paste(warped, (0, 0), mask)
     if outline:
         ImageDraw.Draw(canvas, 'RGBA').polygon(poly, outline=(0, 0, 0, 55))

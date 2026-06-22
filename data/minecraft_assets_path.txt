@@ -1,0 +1,5 @@
+# Optional: local Minecraft assets root used for block textures.
+# The app auto-detects %APPDATA%\.minecraft\versions\*\*\assets\minecraft.
+# If Minecraft is installed somewhere custom, write one absolute assets root below.
+# Example:
+# D:\Games\.minecraft\versions\1.21.8\1.21.8\assets\minecraft

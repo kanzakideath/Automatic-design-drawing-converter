@@ -1,7 +1,7 @@
 {
-  "version": "1.2.1",
-  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.2.1/SchematicMaterialConverter.exe",
-  "sha256": "",
-  "notes": "Show stack and shulker-box estimates in material lists, PNG export, and CSV export.",
+  "version": "1.2.2",
+  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.2.2/SchematicMaterialConverter.exe",
+  "sha256": "8589fed75b7ddfff8cb519ac52f10d696cb78afa46badf024f90feecf92e0dda",
+  "notes": "Use local Minecraft assets for block icons and 3D preview textures when available, with automatic fallback when assets are missing.",
   "mandatory": false
 }

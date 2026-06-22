@@ -17,7 +17,7 @@ except Exception:
     DND_FILES = None
     _HAS_DND = False
 
-from PIL import Image, ImageDraw, ImageFont, ImageTk
+from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageTk
 
 import blockdata as bd
 import converter
@@ -708,6 +708,10 @@ class DashboardApp:
         self._button(body, 'フォーカス表示を切り替え', self.toggle_focus_mode, bg=UI['BTN_BG_2']).pack(anchor='w')
         self._button(body, 'プレビューキャッシュをクリア', self.clear_preview_cache,
                      bg=UI['BTN_BG_2']).pack(anchor='w', pady=(8, 0))
+        assets_label = icons.minecraft_assets_label()
+        texture_status = 'Minecraftテクスチャ: ' + (assets_label if assets_label else '未検出（内蔵の軽量表示を使用）')
+        self._label(body, texture_status, size=8, fg=UI['MUTED'], bg=UI['BG'],
+                    wraplength=650).pack(anchor='w', pady=(8, 0))
         self._label(body, '更新', size=10, weight='bold', bg=UI['BG']).pack(anchor='w', pady=(18, 6))
         self._button(body, 'ネット更新を今すぐ確認', self.check_for_updates_manual,
                      bg=UI['BTN_BG_2']).pack(anchor='w')
@@ -2119,7 +2123,7 @@ class DashboardApp:
 
     # ---------------------------------------------------------------- visuals
     def _loaded_thumb(self, w, h):
-        key = ('loaded', w, h, self.src_path)
+        key = ('loaded', w, h, self.src_path, icons.minecraft_assets_label())
         if key in self.image_cache:
             return self.image_cache[key]
         im = self._render_schematic_preview(w, h, max_blocks=900)
@@ -2128,7 +2132,8 @@ class DashboardApp:
         return img
 
     def _result_preview_image(self, w, h):
-        key = ('result', w, h, self.src_path, tuple(sorted(self.overrides.items())))
+        key = ('result', w, h, self.src_path, tuple(sorted(self.overrides.items())),
+               icons.minecraft_assets_label())
         if key in self.image_cache:
             return self.image_cache[key]
         im = self._render_schematic_preview(w, h)
@@ -2145,14 +2150,14 @@ class DashboardApp:
         self._draw_minecraft_sky(d, w, h)
         self._draw_superflat_ground(d, w, h, camera, bounds)
         if not records:
-            self._draw_empty_preview(d, w, h, camera, bounds)
+            self._draw_empty_preview(im, d, w, h, camera, bounds)
             d.rectangle([0, 0, w - 1, h - 1], outline='#4d79ff')
             return im
 
         self._draw_build_shadow(d, records, camera, w, h)
         faces = self._visible_block_faces(records, camera)
         for depth, poly, bid, normal, seed in faces:
-            self._draw_minecraft_face(d, poly, self._block_rgb(bid), normal, seed)
+            self._draw_minecraft_face(im, d, poly, self._block_rgb(bid), normal, seed, bid)
         self._draw_scene_vignette(d, w, h)
         d.rectangle([0, 0, w - 1, h - 1], outline='#4d79ff')
         return im
@@ -2315,7 +2320,7 @@ class DashboardApp:
         faces.sort(key=lambda f: f[0], reverse=True)
         return faces
 
-    def _draw_minecraft_face(self, draw, poly, color, normal, seed):
+    def _draw_minecraft_face(self, canvas, draw, poly, color, normal, seed, bid):
         light = self._v_norm((-0.35, 0.82, -0.46))
         dot = max(0.0, self._v_dot(normal, light))
         if normal[1] > 0:
@@ -2324,11 +2329,61 @@ class DashboardApp:
             factor = 0.55 + dot * 0.42
         fill = self._shade(color, factor)
         outline = self._shade(color, 0.38)
-        draw.polygon(poly, fill=fill, outline=outline)
         size = max(max(p[0] for p in poly) - min(p[0] for p in poly),
                    max(p[1] for p in poly) - min(p[1] for p in poly))
+        if size >= 6:
+            try:
+                tex = icons.block_texture_image(bid, top=normal[1] > 0)
+            except Exception:
+                tex = None
+            if tex is not None and self._paste_preview_texture(canvas, tex, poly, factor):
+                draw.polygon(poly, outline=outline)
+                return
+        draw.polygon(poly, fill=fill, outline=outline)
         if size >= 8:
             self._draw_face_texture(draw, poly, fill, seed)
+
+    def _paste_preview_texture(self, canvas, tex, poly, factor):
+        if tex is None or len(poly) < 4:
+            return False
+        p0, p1, _p2, p3 = poly
+        px = max(1, tex.width)
+        ux, uy = p1[0] - p0[0], p1[1] - p0[1]
+        vx, vy = p3[0] - p0[0], p3[1] - p0[1]
+        det = (ux * vy - vx * uy) / (px * px)
+        if abs(det) < 1e-6:
+            return False
+        min_x = max(0, int(math.floor(min(p[0] for p in poly))) - 1)
+        min_y = max(0, int(math.floor(min(p[1] for p in poly))) - 1)
+        max_x = min(canvas.size[0], int(math.ceil(max(p[0] for p in poly))) + 1)
+        max_y = min(canvas.size[1], int(math.ceil(max(p[1] for p in poly))) + 1)
+        bw = max_x - min_x
+        bh = max_y - min_y
+        if bw <= 0 or bh <= 0:
+            return False
+        a = (vy / px) / det
+        b = (-vx / px) / det
+        d = (-uy / px) / det
+        e = (ux / px) / det
+        c = -(a * p0[0] + b * p0[1])
+        f = -(d * p0[0] + e * p0[1])
+        local_affine = (a, b, a * min_x + b * min_y + c,
+                        d, e, d * min_x + e * min_y + f)
+        warped = tex.transform((bw, bh), Image.AFFINE, local_affine, resample=Image.NEAREST)
+        mask = Image.new('L', (bw, bh), 0)
+        local_poly = [(p[0] - min_x, p[1] - min_y) for p in poly]
+        ImageDraw.Draw(mask).polygon(local_poly, fill=255)
+        if warped.mode == 'RGBA':
+            alpha = warped.getchannel('A')
+            if alpha.getextrema() != (255, 255):
+                mask = ImageChops.multiply(mask, alpha)
+        canvas.paste(warped, (min_x, min_y), mask)
+        sd = ImageDraw.Draw(canvas, 'RGBA')
+        if factor < 0.98:
+            sd.polygon(poly, fill=(0, 0, 0, min(150, int((1.0 - factor) * 145))))
+        elif factor > 1.02:
+            sd.polygon(poly, fill=(255, 255, 255, min(48, int((factor - 1.0) * 75))))
+        return True
 
     def _draw_face_texture(self, draw, poly, base, seed):
         p0, p1, p2, p3 = poly
@@ -2386,7 +2441,7 @@ class DashboardApp:
         for i in range(0, w, max(22, w // 18)):
             draw.line([(i, int(h * .66)), (i - int(w * .18), h)], fill='#172943')
 
-    def _draw_empty_preview(self, draw, w, h, camera=None, bounds=None):
+    def _draw_empty_preview(self, canvas, draw, w, h, camera=None, bounds=None):
         sample = []
         palette = [self._target_for(c) if self._target_for(c) != KEEP else c.source for c in self._all_records()[:8]]
         if not palette:
@@ -2402,7 +2457,7 @@ class DashboardApp:
             camera = self._minecraft_camera(bounds, w, h)
         self._draw_build_shadow(draw, sample, camera, w, h)
         for _depth, poly, bid, normal, seed in self._visible_block_faces(sample, camera):
-            self._draw_minecraft_face(draw, poly, self._block_rgb(bid), normal, seed)
+            self._draw_minecraft_face(canvas, draw, poly, self._block_rgb(bid), normal, seed, bid)
 
     def _draw_cube(self, draw, px, py, size, color):
         s = size
