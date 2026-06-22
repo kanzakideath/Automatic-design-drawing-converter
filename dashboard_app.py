@@ -208,11 +208,14 @@ class RoundedButton(tk.Canvas):
 class InteractivePreview(tk.Canvas):
     def __init__(self, parent, app, width=318, height=190):
         super().__init__(parent, width=width, height=height, bg=UI['PANEL_2'],
-                         highlightthickness=0, bd=0, relief='flat', cursor='fleur')
+                         highlightthickness=0, bd=0, relief='flat', cursor='fleur',
+                         takefocus=1)
         self.app = app
         self.yaw = -38.0
         self.pitch = 0.34
         self.zoom = 1.55
+        self.pan_x = 0.0
+        self.pan_y = 0.0
         self.mode = 'orbit'
         self._photo = None
         self._drag = None
@@ -220,11 +223,18 @@ class InteractivePreview(tk.Canvas):
         self._last_render_ms = 0
         self.bind('<Configure>', lambda _e: self.refresh())
         self.bind('<Enter>', self._on_enter)
-        self.bind('<ButtonPress-1>', self._on_press)
+        self.bind('<ButtonPress-1>', lambda e: self._on_press(e, 'rotate'))
+        self.bind('<ButtonPress-2>', lambda e: self._on_press(e, 'pan'))
+        self.bind('<ButtonPress-3>', lambda e: self._on_press(e, 'pan'))
         self.bind('<B1-Motion>', self._on_drag)
+        self.bind('<B2-Motion>', self._on_drag)
+        self.bind('<B3-Motion>', self._on_drag)
         self.bind('<ButtonRelease-1>', self._on_release)
+        self.bind('<ButtonRelease-2>', self._on_release)
+        self.bind('<ButtonRelease-3>', self._on_release)
         self.bind('<MouseWheel>', self._on_wheel)
         self.bind('<Double-Button-1>', self.toggle_mode)
+        self.bind('<KeyPress>', self._on_key)
         self._draw_loading(width, height)
         self.refresh()
 
@@ -232,15 +242,24 @@ class InteractivePreview(tk.Canvas):
         self.app._wheel_target = None
         self.focus_set()
 
-    def _on_press(self, event):
-        self._drag = (event.x, event.y, self.yaw, self.pitch)
+    def _on_press(self, event, mode='rotate'):
+        if mode == 'rotate' and (event.state & 0x0001):
+            mode = 'pan'
+        self._drag = (mode, event.x, event.y, self.yaw, self.pitch, self.pan_x, self.pan_y)
+        self.focus_set()
 
     def _on_drag(self, event):
         if not self._drag:
             return
-        x0, y0, yaw0, pitch0 = self._drag
-        self.yaw = yaw0 + (event.x - x0) * 0.38
-        self.pitch = max(-0.12, min(0.88, pitch0 + (y0 - event.y) * 0.004))
+        mode, x0, y0, yaw0, pitch0, panx0, pany0 = self._drag
+        if mode == 'pan':
+            scale_x = 1.65 / max(0.45, self.zoom)
+            scale_y = 1.15 / max(0.45, self.zoom)
+            self.pan_x = panx0 - ((event.x - x0) / float(max(180, self.winfo_width()))) * scale_x
+            self.pan_y = pany0 + ((event.y - y0) / float(max(140, self.winfo_height()))) * scale_y
+        else:
+            self.yaw = yaw0 + (event.x - x0) * 0.32
+            self.pitch = max(-0.12, min(0.88, pitch0 + (y0 - event.y) * 0.0034))
         self.refresh()
 
     def _on_release(self, _event):
@@ -249,19 +268,69 @@ class InteractivePreview(tk.Canvas):
 
     def _on_wheel(self, event):
         factor = 1.12 if event.delta > 0 else 0.89
-        self.zoom = max(0.45, min(3.4, self.zoom * factor))
+        self.set_zoom(self.zoom * factor)
         self.refresh(immediate=True)
         return 'break'
+
+    def _on_key(self, event):
+        key = (event.keysym or '').lower()
+        if key in ('r', 'home'):
+            self.reset_view()
+        elif key == 'f':
+            self.toggle_mode()
+        elif key in ('plus', 'equal', 'add'):
+            self.set_zoom(self.zoom * 1.16)
+            self.refresh(immediate=True)
+        elif key in ('minus', 'subtract'):
+            self.set_zoom(self.zoom / 1.16)
+            self.refresh(immediate=True)
+        elif key in ('left', 'a'):
+            self.yaw -= 8.0
+            self.refresh(immediate=True)
+        elif key in ('right', 'd'):
+            self.yaw += 8.0
+            self.refresh(immediate=True)
+        elif key in ('up', 'w'):
+            self.pitch = min(0.88, self.pitch + 0.06)
+            self.refresh(immediate=True)
+        elif key in ('down', 's'):
+            self.pitch = max(-0.12, self.pitch - 0.06)
+            self.refresh(immediate=True)
+        elif key in ('1', 'num_1'):
+            self.set_view(-38.0, 0.34, 1.55)
+        elif key in ('2', 'num_2'):
+            self.set_view(0.0, 0.72, 1.35)
+        elif key in ('3', 'num_3'):
+            self.set_view(-90.0, 0.22, 1.55)
+        return 'break'
+
+    def set_zoom(self, value):
+        self.zoom = max(0.45, min(3.8, float(value)))
+
+    def set_view(self, yaw, pitch, zoom=None):
+        self.yaw = float(yaw)
+        self.pitch = max(-0.12, min(0.88, float(pitch)))
+        if zoom is not None:
+            self.set_zoom(zoom)
+        self.pan_x = 0.0
+        self.pan_y = 0.0
+        self.mode = 'orbit'
+        self.refresh(immediate=True)
 
     def toggle_mode(self, _event=None):
         self.mode = 'walk' if self.mode == 'orbit' else 'orbit'
         self.zoom = max(0.85, min(1.7, self.zoom))
+        if self.mode == 'walk':
+            self.pan_x = 0.0
+            self.pan_y = 0.0
         self.refresh(immediate=True)
 
     def reset_view(self):
         self.yaw = -38.0
         self.pitch = 0.34
         self.zoom = 1.55
+        self.pan_x = 0.0
+        self.pan_y = 0.0
         self.mode = 'orbit'
         self.refresh(immediate=True)
 
@@ -282,6 +351,8 @@ class InteractivePreview(tk.Canvas):
             'yaw': self.yaw,
             'pitch': self.pitch,
             'zoom': self.zoom,
+            'pan_x': self.pan_x,
+            'pan_y': self.pan_y,
             'mode': self.mode,
         }
 
@@ -318,11 +389,12 @@ class InteractivePreview(tk.Canvas):
         mode_text = '内部視点' if self.mode == 'walk' else '外観'
         zoom_text = '%d%%' % int(self.zoom * 100)
         quality = '軽量' if self._drag else '高品質'
-        self.create_rectangle(10, 10, 196, 36, fill='#000000', outline='', stipple='gray50')
+        self.create_rectangle(10, 10, 236, 36, fill='#000000', outline='', stipple='gray50')
         self.create_text(20, 23, text='%s  %s  %s' % (mode_text, zoom_text, quality), anchor='w',
                          fill='#ffffff', font=('Yu Gothic UI', 9, 'bold'))
         self.create_rectangle(10, h - 32, w - 10, h - 10, fill='#000000', outline='', stipple='gray50')
-        self.create_text(w / 2, h - 21, text='ドラッグで回転  /  ホイールでズーム  /  ダブルクリックで視点切替',
+        self.create_text(w / 2, h - 21,
+                         text='左ドラッグ: 回転  /  右ドラッグ: 平行移動  /  ホイール: ズーム  /  1-3: 視点',
                          fill='#ffffff', font=('Yu Gothic UI', 8))
 
 
@@ -482,8 +554,8 @@ class DashboardApp:
     def _build_ui(self):
         self.root.title(APP_TITLE)
         self.root.configure(bg=UI['BG'])
-        self._set_centered_geometry(self.root, 1500, 900)
-        self.root.minsize(1280, 780)
+        self._set_centered_geometry(self.root, 1600, 940)
+        self.root.minsize(1320, 820)
         self.root.grid_rowconfigure(1, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
         self._configure_style()
@@ -1045,9 +1117,9 @@ class DashboardApp:
 
         self.content = tk.Frame(self.main, bg=UI['BG'])
         self.content.grid(row=1, column=0, sticky='nsew', pady=(10, 0))
-        self.content.grid_columnconfigure(0, minsize=250)
+        self.content.grid_columnconfigure(0, minsize=230)
         self.content.grid_columnconfigure(1, weight=1)
-        self.content.grid_columnconfigure(2, minsize=470)
+        self.content.grid_columnconfigure(2, minsize=560)
         self.content.grid_rowconfigure(0, weight=1)
 
         self.left_col = tk.Frame(self.content, bg=UI['BG'])
@@ -1245,7 +1317,7 @@ class DashboardApp:
         panel.grid(row=0, column=0, sticky='nsew')
         panel.grid_columnconfigure(0, weight=1)
         panel.grid_rowconfigure(1, weight=3)
-        panel.grid_rowconfigure(4, weight=1)
+        panel.grid_rowconfigure(5, weight=1)
         self._label(panel, '変換結果プレビュー', size=10, weight='bold').grid(
             row=0, column=0, sticky='w', padx=12, pady=(10, 6))
         self._label(panel, '● リアルタイム更新', size=8, fg=UI['GREEN']).grid(
@@ -1264,8 +1336,23 @@ class DashboardApp:
         self._button(controls, '大きく表示', self.open_full_preview,
                      bg=UI['ACCENT'], size=8, padx=12, pady=5).pack(side='right')
 
+        viewbar = tk.Frame(panel, bg=UI['PANEL'])
+        viewbar.grid(row=3, column=0, sticky='ew', padx=12, pady=(0, 8))
+        for label, args in [
+            ('俯瞰', (-38.0, 0.34, 1.55)),
+            ('上から', (0.0, 0.72, 1.35)),
+            ('正面', (0.0, 0.16, 1.65)),
+            ('横', (-90.0, 0.20, 1.65)),
+        ]:
+            self._button(viewbar, label, lambda a=args: self._preview_set_view(*a),
+                         bg='#0f1c31', size=8, padx=10, pady=4).pack(side='left', padx=(0, 6))
+        self._button(viewbar, '＋', lambda: self._preview_zoom(1.16),
+                     bg=UI['BTN_BG_2'], size=9, padx=10, pady=4).pack(side='right', padx=(6, 0))
+        self._button(viewbar, '−', lambda: self._preview_zoom(1 / 1.16),
+                     bg=UI['BTN_BG_2'], size=9, padx=10, pady=4).pack(side='right')
+
         tabs = tk.Frame(panel, bg=UI['PANEL'])
-        tabs.grid(row=3, column=0, sticky='ew', padx=12, pady=(0, 8))
+        tabs.grid(row=4, column=0, sticky='ew', padx=12, pady=(0, 8))
         self.preview_tab_buttons = {}
         for key, label in [('overview', '概要'), ('materials', '必要素材'), ('stats', '詳細統計')]:
             btn = self._button(tabs, label, lambda k=key: self.set_preview_tab(k),
@@ -1275,11 +1362,11 @@ class DashboardApp:
             self.preview_tab_buttons[key] = btn
 
         self.preview_body = tk.Frame(panel, bg=UI['PANEL'])
-        self.preview_body.grid(row=4, column=0, sticky='nsew', padx=12)
+        self.preview_body.grid(row=5, column=0, sticky='nsew', padx=12)
         self._build_preview_body()
 
         actions = tk.Frame(panel, bg=UI['PANEL'])
-        actions.grid(row=5, column=0, sticky='ew', padx=12, pady=(8, 12))
+        actions.grid(row=6, column=0, sticky='ew', padx=12, pady=(8, 12))
         self.start_btn = self._button(actions, '▶ 変換を実行', self.do_convert, bg=UI['ACCENT'],
                                       fg='white', size=11, padx=12, pady=10,
                                       state='normal' if self.loaded_nbt is not None else 'disabled')
@@ -1664,6 +1751,17 @@ class DashboardApp:
             self.preview_view.mode = mode
             if mode == 'walk':
                 self.preview_view.zoom = max(0.9, self.preview_view.zoom)
+                self.preview_view.pan_x = 0.0
+                self.preview_view.pan_y = 0.0
+            self.preview_view.refresh(immediate=True)
+
+    def _preview_set_view(self, yaw, pitch, zoom):
+        if hasattr(self, 'preview_view'):
+            self.preview_view.set_view(yaw, pitch, zoom)
+
+    def _preview_zoom(self, factor):
+        if hasattr(self, 'preview_view'):
+            self.preview_view.set_zoom(self.preview_view.zoom * factor)
             self.preview_view.refresh(immediate=True)
 
     def _reset_preview_view(self):
@@ -2502,6 +2600,21 @@ class DashboardApp:
         forward = self._v_norm((target[0] - cam[0], target[1] - cam[1], target[2] - cam[2]))
         right = self._v_norm(self._v_cross(forward, (0.0, 1.0, 0.0)))
         up = self._v_cross(right, forward)
+        try:
+            pan_x = float(view.get('pan_x', 0.0) or 0.0)
+            pan_y = float(view.get('pan_y', 0.0) or 0.0)
+        except Exception:
+            pan_x = pan_y = 0.0
+        if pan_x or pan_y:
+            sx = max(1.0, span)
+            sy = max(1.0, height, span * 0.55)
+            offset = (
+                right[0] * pan_x * sx + up[0] * pan_y * sy,
+                right[1] * pan_x * sx + up[1] * pan_y * sy,
+                right[2] * pan_x * sx + up[2] * pan_y * sy,
+            )
+            cam = (cam[0] + offset[0], cam[1] + offset[1], cam[2] + offset[2])
+            target = (target[0] + offset[0], target[1] + offset[1], target[2] + offset[2])
         return {'pos': cam, 'forward': forward, 'right': right, 'up': up, 'focal': focal,
                 'cx': w / 2.0, 'cy': cy}
 
