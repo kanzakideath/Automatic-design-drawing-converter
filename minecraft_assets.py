@@ -281,9 +281,11 @@ def _tint_texture(im: Image.Image, tint: tuple[int, int, int], divisor: int = 17
     return out
 
 
-def _special_block_texture(base: str, top: bool) -> Image.Image | None:
+def _special_block_texture(base: str, top: bool, face: str | None = None) -> Image.Image | None:
     if base == "grass_block":
-        if top:
+        if face == "down":
+            return _load_texture("block/dirt")
+        if top or face == "up":
             tex = _load_texture("block/grass_block_top")
             return _tint_texture(tex, GRASS_TINT) if tex is not None else None
         side = _load_texture("block/grass_block_side")
@@ -302,23 +304,34 @@ def _special_block_texture(base: str, top: bool) -> Image.Image | None:
     return None
 
 
-def get_block_texture(bid: str, top: bool = False) -> Image.Image | None:
+def get_block_texture(bid: str, top: bool = False, face: str | None = None) -> Image.Image | None:
     base = str(bid or "")
     if base.startswith("minecraft:"):
         base = base.split(":", 1)[1]
-    key = (base, bool(top))
+    face = str(face or ("up" if top else "")).lower()
+    key = (base, bool(top), face)
     if key in _TEXTURE_CACHE:
         cached = _TEXTURE_CACHE[key]
         return cached.copy() if cached is not None else None
-    special = _special_block_texture(base, bool(top))
+    special = _special_block_texture(base, bool(top), face=face or None)
     if special is not None:
         _TEXTURE_CACHE[key] = special.copy()
         return special
     model = _merged_model(_blockstate_model(base))
     textures = model.get("textures", {})
     face_textures = model.get("face_textures", {})
-    if top:
-        candidates = ["up", "top", "end", "all", "particle", "side", "pane", "texture"]
+    face_candidates = {
+        "up": ["up", "top", "end", "all", "particle", "side", "pane", "texture"],
+        "down": ["down", "bottom", "end", "all", "particle", "side", "pane", "texture"],
+        "north": ["north", "side", "all", "pane", "texture", "particle", "end", "top"],
+        "south": ["south", "side", "all", "pane", "texture", "particle", "end", "top"],
+        "east": ["east", "side", "all", "pane", "texture", "particle", "end", "top"],
+        "west": ["west", "side", "all", "pane", "texture", "particle", "end", "top"],
+    }
+    if face in face_candidates:
+        candidates = face_candidates[face]
+    elif top:
+        candidates = face_candidates["up"]
     else:
         candidates = ["north", "south", "east", "west", "side", "all", "pane", "texture", "particle", "end", "top"]
     refs = []

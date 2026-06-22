@@ -218,12 +218,12 @@ class InteractivePreview(tk.Canvas):
                          highlightthickness=0, bd=0, relief='flat', cursor='fleur',
                          takefocus=1)
         self.app = app
-        self.yaw = -38.0
-        self.pitch = 0.34
-        self.zoom = 1.55
+        self.yaw = 0.0
+        self.pitch = 0.20
+        self.zoom = 1.70
         self.pan_x = 0.0
         self.pan_y = 0.0
-        self.mode = 'orbit'
+        self.mode = 'walk'
         self._photo = None
         self._drag = None
         self._after_id = None
@@ -333,12 +333,12 @@ class InteractivePreview(tk.Canvas):
         self.refresh(immediate=True)
 
     def reset_view(self):
-        self.yaw = -38.0
-        self.pitch = 0.34
-        self.zoom = 1.55
+        self.yaw = 0.0
+        self.pitch = 0.20
+        self.zoom = 1.70
         self.pan_x = 0.0
         self.pan_y = 0.0
-        self.mode = 'orbit'
+        self.mode = 'walk'
         self.refresh(immediate=True)
 
     def refresh(self, immediate=False):
@@ -380,7 +380,8 @@ class InteractivePreview(tk.Canvas):
             im = self.app._render_schematic_preview(w, h, max_blocks=max_blocks,
                                                     view=self.view_state(), fast=bool(self._drag),
                                                     face_limit_override=face_limit,
-                                                    texture_limit=texture_limit)
+                                                    texture_limit=texture_limit,
+                                                    min_face_px=2.2 if not self._drag else 3.0)
             self._photo = ImageTk.PhotoImage(im)
             self.delete('all')
             self.create_image(0, 0, image=self._photo, anchor='nw')
@@ -2412,15 +2413,16 @@ class DashboardApp:
         bounds = self._record_bounds(records)
         atlas, tile_map = self._gpu_texture_atlas(records)
         blocks = []
+        face_order = ('up', 'down', 'north', 'south', 'east', 'west')
         for rec in records:
             x, y, z, bid, props = self._preview_rec_parts(rec)
             base = bd.strip_ns(bid)
             r, g, b = self._block_rgb(bid)
-            top_tile = tile_map.get((base, True), 0)
-            side_tile = tile_map.get((base, False), top_tile)
+            face_tiles = [tile_map.get((base, face), 0) for face in face_order]
             shape_id, variant = self._gpu_shape(base, props)
             blocks.append((int(x), int(y), int(z), int(r), int(g), int(b),
-                           top_tile, side_tile, shape_id, variant))
+                           face_tiles[0], face_tiles[1], face_tiles[2], face_tiles[3],
+                           face_tiles[4], face_tiles[5], shape_id, variant))
         return {
             'title': os.path.basename(self.src_path or 'schematic'),
             'blocks': blocks,
@@ -2432,6 +2434,9 @@ class DashboardApp:
             'width': 1280,
             'height': 760,
             'startup_timeout': 4.5,
+            'initial_mode': 'walk',
+            'initial_yaw': 0.0,
+            'initial_pitch': 8.0,
         }
 
     def _gpu_texture_atlas(self, records):
@@ -2439,11 +2444,12 @@ class DashboardApp:
         tile_size = 32
         entries = []
         tile_map = {}
+        face_order = ('up', 'down', 'north', 'south', 'east', 'west')
         for base in bases:
-            for top in (False, True):
-                tile_map[(base, top)] = len(entries)
+            for face in face_order:
+                tile_map[(base, face)] = len(entries)
                 try:
-                    tex = icons.block_texture_image(base, top=top).convert('RGBA')
+                    tex = icons.block_texture_image(base, top=(face == 'up'), face=face).convert('RGBA')
                 except Exception:
                     tex = Image.new('RGBA', (tile_size, tile_size), self._block_rgb(base) + (255,))
                 if tex.size != (tile_size, tile_size):
@@ -2520,7 +2526,8 @@ class DashboardApp:
         if key in self.image_cache:
             return self.image_cache[key]
         im = self._render_schematic_preview(w, h, max_blocks=18000, fast=True,
-                                            face_limit_override=2800, texture_limit=0)
+                                            face_limit_override=2800, texture_limit=360,
+                                            min_face_px=2.0)
         img = ImageTk.PhotoImage(im)
         self.image_cache[key] = img
         return img
@@ -2531,13 +2538,14 @@ class DashboardApp:
         if key in self.image_cache:
             return self.image_cache[key]
         im = self._render_schematic_preview(w, h, max_blocks=22000, fast=True,
-                                            face_limit_override=3600, texture_limit=0)
+                                            face_limit_override=3600, texture_limit=520,
+                                            min_face_px=2.0)
         img = ImageTk.PhotoImage(im)
         self.image_cache[key] = img
         return img
 
     def _render_schematic_preview(self, w, h, max_blocks=80000, view=None, fast=False,
-                                  face_limit_override=None, texture_limit=None):
+                                  face_limit_override=None, texture_limit=None, min_face_px=0.0):
         if fast:
             max_blocks = min(max_blocks, 7000)
         im = Image.new('RGB', (w, h), '#87c9ff')
@@ -2555,6 +2563,9 @@ class DashboardApp:
 
         self._draw_build_shadow(d, records, camera, w, h, fast=fast)
         faces = self._visible_block_faces(records, camera, occupied_positions=occupied)
+        if min_face_px:
+            minimum = float(min_face_px)
+            faces = [face for face in faces if self._face_screen_size(face[1]) >= minimum]
         face_limit = (int(face_limit_override) if face_limit_override is not None
                       else (4200 if fast else (32000 if w * h >= 260000 else 12000)))
         if len(faces) > face_limit:
@@ -2563,14 +2574,19 @@ class DashboardApp:
                      for i in range(face_limit)]
         if texture_limit is None:
             texture_limit = 14000
-        use_textures = not fast and len(faces) <= int(texture_limit)
-        for depth, poly, bid, normal, seed in faces:
+        texture_limit = max(0, int(texture_limit))
+        texture_start = max(0, len(faces) - texture_limit) if texture_limit else len(faces)
+        for index, (depth, poly, bid, normal, seed) in enumerate(faces):
             self._draw_minecraft_face(im, d, poly, self._block_rgb(bid), normal, seed, bid,
-                                      textured=use_textures)
+                                      textured=index >= texture_start)
         if not fast:
             self._draw_scene_vignette(d, w, h)
         d.rectangle([0, 0, w - 1, h - 1], outline='#4d79ff')
         return im
+
+    def _face_screen_size(self, poly):
+        return max(max(p[0] for p in poly) - min(p[0] for p in poly),
+                   max(p[1] for p in poly) - min(p[1] for p in poly))
 
     def _record_bounds(self, records):
         if not records:
@@ -2760,7 +2776,8 @@ class DashboardApp:
                    max(p[1] for p in poly) - min(p[1] for p in poly))
         if textured and size >= 6:
             try:
-                tex = icons.block_texture_image(bid, top=normal[1] > 0)
+                tex = icons.block_texture_image(bid, top=normal[1] > 0,
+                                                face=self._texture_face_name(normal))
             except Exception:
                 tex = None
             if tex is not None and self._paste_preview_texture(canvas, tex, poly, factor):
@@ -2770,6 +2787,21 @@ class DashboardApp:
         draw.polygon(poly, fill=fill, outline=outline if size >= 5 else None)
         if size >= 8:
             self._draw_face_texture(draw, poly, fill, seed)
+
+    def _texture_face_name(self, normal):
+        if normal[1] > 0:
+            return 'up'
+        if normal[1] < 0:
+            return 'down'
+        if normal[2] < 0:
+            return 'north'
+        if normal[2] > 0:
+            return 'south'
+        if normal[0] > 0:
+            return 'east'
+        if normal[0] < 0:
+            return 'west'
+        return None
 
     def _paste_preview_texture(self, canvas, tex, poly, factor):
         if tex is None or len(poly) < 4:

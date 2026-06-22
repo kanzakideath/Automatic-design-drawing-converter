@@ -242,28 +242,28 @@ def minecraft_assets_label():
     return minecraft_assets.root_label()
 
 
-def _asset_texture(base, top=False):
+def _asset_texture(base, top=False, face=None):
     if not minecraft_assets:
         return None
     try:
-        return minecraft_assets.get_block_texture(base, top=top)
+        return minecraft_assets.get_block_texture(base, top=top, face=face)
     except Exception:
         return None
 
 
-def _texture(base, color, top=False):
-    key = (base, color, top, using_minecraft_assets())
+def _texture(base, color, top=False, face=None):
+    key = (base, color, top, face, using_minecraft_assets())
     if key not in _TEX_CACHE:
-        tex = _asset_texture(base, top=top)
+        tex = _asset_texture(base, top=top, face=face)
         if tex is None:
             tex = _make_texture(_tex_style(base), color, base, top)
         _TEX_CACHE[key] = tex
     return _TEX_CACHE[key]
 
 
-def block_texture_image(bid, top=False):
+def block_texture_image(bid, top=False, face=None):
     base = bd.strip_ns(bid)
-    return _texture(base, bd.base_color(bid), top=top).copy()
+    return _texture(base, bd.base_color(bid), top=top, face=face).copy()
 
 
 # ---------------------------------------------------------------------------

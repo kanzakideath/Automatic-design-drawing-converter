@@ -1,7 +1,7 @@
 {
-  "version": "1.3.3",
-  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.3.3/SchematicMaterialConverter.exe",
-  "sha256": "7bc9cdc629cceabd6c083d2e8dd29a61721807d5d51e467ea887f045856e5e94",
-  "notes": "Speed up previews with GPU startup verification, OpenGL back-face culling, lower-overhead HUD updates, and much lighter Tk/Pillow fallback rendering.",
+  "version": "1.3.4",
+  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.3.4/SchematicMaterialConverter.exe",
+  "sha256": "0fb28c52cc44ba3f780e2568958dfaa8f02f992ac602908c41e64878a3d69d7a",
+  "notes": "Render previews with actual per-face Minecraft textures, restore textured right-side preview rendering, start previews from a closer Minecraft-like viewpoint, and filter tiny distant faces that looked like particles.",
   "mandatory": false
 }

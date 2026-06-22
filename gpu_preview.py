@@ -29,6 +29,14 @@ FACE_DEFS = (
 )
 
 TRI_ORDER = (0, 1, 2, 0, 2, 3)
+FACE_TILE_INDEX = {
+    (0, 1, 0): 0,
+    (0, -1, 0): 1,
+    (0, 0, -1): 2,
+    (0, 0, 1): 3,
+    (1, 0, 0): 4,
+    (-1, 0, 0): 5,
+}
 
 SHAPE_BOUNDS = {
     0: (0.0, 0.0, 0.0, 1.0, 1.0, 1.0),       # full cube
@@ -232,10 +240,16 @@ def build_mesh(payload):
 
     for block in blocks:
         x, y, z, _r, _g, _b = block[:6]
-        top_tile = int(block[6]) if len(block) > 6 else 0
-        side_tile = int(block[7]) if len(block) > 7 else top_tile
-        shape_id = int(block[8]) if len(block) > 8 else 0
-        variant = int(block[9]) if len(block) > 9 else 0
+        if len(block) >= 14:
+            face_tiles = tuple(int(v) for v in block[6:12])
+            shape_id = int(block[12])
+            variant = int(block[13])
+        else:
+            top_tile = int(block[6]) if len(block) > 6 else 0
+            side_tile = int(block[7]) if len(block) > 7 else top_tile
+            face_tiles = (top_tile, side_tile, side_tile, side_tile, side_tile, side_tile)
+            shape_id = int(block[8]) if len(block) > 8 else 0
+            variant = int(block[9]) if len(block) > 9 else 0
         ix, iy, iz = int(x), int(y), int(z)
         for x0, y0, z0, x1, y1, z1, occluding in _shape_boxes(shape_id, variant):
             sx, sy, sz = x1 - x0, y1 - y0, z1 - z0
@@ -247,7 +261,7 @@ def build_mesh(payload):
                     continue
                 light_value = max(0, min(255, int(255 * light)))
                 pts = [(ix + x0 + cx * sx, iy + y0 + cy * sy, iz + z0 + cz * sz) for cx, cy, cz in corners]
-                tile_index = top_tile if normal[1] else side_tile
+                tile_index = face_tiles[FACE_TILE_INDEX.get(normal, 3)]
                 if tile_index < 0 or tile_index >= len(atlas_uvs):
                     tile_index = 0
                 u0, v0, u1, v1 = atlas_uvs[tile_index]
@@ -318,10 +332,10 @@ class GpuPreviewWindow:
         self.stride = 1
         self.keys = set()
         self.mouse_down = False
-        self.mode = 'orbit'
-        self.yaw = -42.0
-        self.pitch = 26.0
-        self.zoom = 1.0
+        self.mode = str(payload.get('initial_mode') or 'orbit')
+        self.yaw = float(payload.get('initial_yaw', -42.0))
+        self.pitch = float(payload.get('initial_pitch', 26.0))
+        self.zoom = float(payload.get('initial_zoom', 1.0))
         self.fps = 0.0
         self._fps_accum = 0.0
         self._fps_frames = 0
