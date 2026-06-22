@@ -25,11 +25,16 @@ import converter
 import icons
 import updater
 
+try:
+    import gpu_preview as preview_geom
+except Exception:
+    preview_geom = None
+
 
 APP_TITLE = '設計図自動素材変換ツール'
 KEEP = '__keep__'
-GPU_PREVIEW_BLOCK_LIMIT = 110000
-GPU_PREVIEW_FACE_LIMIT = 160000
+GPU_PREVIEW_BLOCK_LIMIT = 180000
+GPU_PREVIEW_FACE_LIMIT = 240000
 CPU_PREVIEW_IDLE_BLOCK_LIMIT = 5600
 CPU_PREVIEW_IDLE_FACE_LIMIT = 1800
 CPU_PREVIEW_TEXTURE_FACE_LIMIT = 300
@@ -387,7 +392,8 @@ class InteractivePreview(tk.Canvas):
             else:
                 max_blocks = CPU_PREVIEW_IDLE_BLOCK_LIMIT if large else max(3600, int(CPU_PREVIEW_IDLE_BLOCK_LIMIT * 0.65))
                 face_limit = CPU_PREVIEW_IDLE_FACE_LIMIT if large else max(1200, int(CPU_PREVIEW_IDLE_FACE_LIMIT * 0.65))
-                texture_limit = CPU_PREVIEW_TEXTURE_FACE_LIMIT if large else max(180, int(CPU_PREVIEW_TEXTURE_FACE_LIMIT * 0.65))
+                texture_limit = face_limit if self.focus_view else (
+                    CPU_PREVIEW_TEXTURE_FACE_LIMIT if large else max(180, int(CPU_PREVIEW_TEXTURE_FACE_LIMIT * 0.65)))
             state = self.view_state()
             cache_key = None if self._drag else (
                 w, h, rw, rh,
@@ -2592,7 +2598,7 @@ class DashboardApp:
         if key in self.image_cache:
             return self.image_cache[key]
         im = self._render_schematic_preview(w, h, max_blocks=18000, fast=True,
-                                            face_limit_override=2800, texture_limit=360,
+                                            face_limit_override=1800, texture_limit=1800,
                                             min_face_px=2.0)
         img = ImageTk.PhotoImage(im)
         self.image_cache[key] = img
@@ -2604,7 +2610,7 @@ class DashboardApp:
         if key in self.image_cache:
             return self.image_cache[key]
         im = self._render_schematic_preview(w, h, max_blocks=22000, fast=True,
-                                            face_limit_override=3600, texture_limit=520,
+                                            face_limit_override=2200, texture_limit=2200,
                                             min_face_px=2.0)
         img = ImageTk.PhotoImage(im)
         self.image_cache[key] = img
@@ -2617,11 +2623,11 @@ class DashboardApp:
             max_blocks = min(max_blocks, 7000)
         im = Image.new('RGB', (w, h), '#87c9ff')
         d = ImageDraw.Draw(im)
-        records = self._render_records(max_blocks=max_blocks)
         if focus_view:
-            records = self._focused_preview_records(records)
+            records = self._focused_render_records(max_blocks=max_blocks)
             occupied = set((int(rec[0]), int(rec[1]), int(rec[2])) for rec in records)
         else:
+            records = self._render_records(max_blocks=max_blocks)
             occupied = self._source_occupied_positions()
         bounds = self._record_bounds(records)
         camera = self._minecraft_camera(bounds, w, h, view=view)
@@ -2659,34 +2665,52 @@ class DashboardApp:
         return max(max(p[0] for p in poly) - min(p[0] for p in poly),
                    max(p[1] for p in poly) - min(p[1] for p in poly))
 
-    def _focused_preview_records(self, records):
-        if not records:
-            return records
+    def _focused_render_records(self, max_blocks=5600):
+        raw_records = self._source_surface_records()
+        if not raw_records:
+            return []
+        max_blocks = max(100, int(max_blocks or 5600))
+        source_key = (id(self.loaded_nbt), 'focused_source_records', max_blocks)
+        if source_key in self._preview_source_cache:
+            focused = self._preview_source_cache[source_key]
+        else:
+            focused = self._choose_contiguous_preview_records(raw_records, max_blocks)
+            self._preview_source_cache[source_key] = focused
+        return self._map_render_records(focused)
+
+    def _choose_contiguous_preview_records(self, records, max_blocks):
+        if len(records) <= max_blocks:
+            return list(records)
         bounds = self._record_bounds(records)
         span = max(bounds['span_x'], bounds['span_z'])
-        if span <= 48:
-            return records
-        cell = max(8, min(24, int(span / 10)))
+        cell = max(8, min(32, int(span / 12)))
         buckets = {}
         for rec in records:
             x, _y, z = rec[:3]
             key = (int(math.floor(float(x) / cell)), int(math.floor(float(z) / cell)))
             buckets[key] = buckets.get(key, 0) + 1
         if not buckets:
-            return records
+            return list(records[:max_blocks])
         bx, bz = max(buckets.items(), key=lambda item: item[1])[0]
         cx = (bx + 0.5) * cell
         cz = (bz + 0.5) * cell
-        radius = max(18.0, min(38.0, span / 5.0))
-        focused = [rec for rec in records
-                   if abs((float(rec[0]) + 0.5) - cx) <= radius
-                   and abs((float(rec[2]) + 0.5) - cz) <= radius]
-        if len(focused) < 80:
-            radius *= 1.8
-            focused = [rec for rec in records
-                       if abs((float(rec[0]) + 0.5) - cx) <= radius
-                       and abs((float(rec[2]) + 0.5) - cz) <= radius]
-        return focused if len(focused) >= 80 else records
+        ranked = sorted(
+            records,
+            key=lambda rec: (
+                max(abs((float(rec[0]) + 0.5) - cx), abs((float(rec[2]) + 0.5) - cz)),
+                ((float(rec[0]) + 0.5) - cx) ** 2 + ((float(rec[2]) + 0.5) - cz) ** 2,
+                float(rec[1]),
+            )
+        )
+        focused = ranked[:max_blocks]
+        focused.sort(key=lambda rec: (int(rec[1]), int(rec[2]), int(rec[0])))
+        return focused
+
+    def _source_surface_records(self):
+        if self.loaded_nbt is None:
+            return []
+        self._source_render_records(max_blocks=500000)
+        return self._preview_source_cache.get((id(self.loaded_nbt), 'surface_records'), [])
 
     def _record_bounds(self, records):
         if not records:
@@ -2710,7 +2734,7 @@ class DashboardApp:
         view = view or {}
         span = max(bounds['span_x'], bounds['span_z'])
         height = bounds['span_y']
-        zoom = max(0.45, min(3.4, float(view.get('zoom', 1.55) or 1.55)))
+        zoom = max(0.45, min(7.2, float(view.get('zoom', 1.55) or 1.55)))
         yaw = math.radians(float(view.get('yaw', -38.0) or 0.0))
         pitch = max(-0.12, min(0.88, float(view.get('pitch', 0.34) or 0.34)))
         mode = view.get('mode', 'orbit')
@@ -2754,7 +2778,7 @@ class DashboardApp:
             cam = (cam[0] + offset[0], cam[1] + offset[1], cam[2] + offset[2])
             target = (target[0] + offset[0], target[1] + offset[1], target[2] + offset[2])
         return {'pos': cam, 'forward': forward, 'right': right, 'up': up, 'focal': focal,
-                'cx': w / 2.0, 'cy': cy}
+                'cx': w / 2.0, 'cy': cy, 'width': w, 'height': h}
 
     def _project3(self, point, camera):
         rel = (point[0] - camera['pos'][0], point[1] - camera['pos'][1], point[2] - camera['pos'][2])
@@ -2804,7 +2828,7 @@ class DashboardApp:
             pb = self._project3(b, camera)
             if pa and pb:
                 line_y = max(pa[1], pb[1])
-                color = '#70c944' if line_y < h * 0.76 else '#62b63b'
+                color = '#7ace45' if line_y < h * 0.76 else '#72c740'
                 draw.line([(pa[0], pa[1]), (pb[0], pb[1])], fill=color, width=1)
         if not fast:
             random.seed(1127)
@@ -2837,29 +2861,41 @@ class DashboardApp:
 
     def _visible_block_faces(self, records, camera, occupied_positions=None):
         occupied = occupied_positions or set((int(rec[0]), int(rec[1]), int(rec[2])) for rec in records)
-        by_pos = {(int(rec[0]), int(rec[1]), int(rec[2])): rec[3] for rec in records}
-        face_defs = [
-            ((0, 1, 0), lambda x, y, z: [(x, y + 1, z), (x + 1, y + 1, z), (x + 1, y + 1, z + 1), (x, y + 1, z + 1)]),
-            ((0, 0, 1), lambda x, y, z: [(x, y, z + 1), (x + 1, y, z + 1), (x + 1, y + 1, z + 1), (x, y + 1, z + 1)]),
-            ((1, 0, 0), lambda x, y, z: [(x + 1, y, z), (x + 1, y, z + 1), (x + 1, y + 1, z + 1), (x + 1, y + 1, z)]),
-            ((0, 0, -1), lambda x, y, z: [(x + 1, y, z), (x, y, z), (x, y + 1, z), (x + 1, y + 1, z)]),
-            ((-1, 0, 0), lambda x, y, z: [(x, y, z + 1), (x, y, z), (x, y + 1, z), (x, y + 1, z + 1)]),
-        ]
+        face_defs = getattr(preview_geom, 'FACE_DEFS', None) if preview_geom else None
+        shape_boxes = getattr(preview_geom, '_shape_boxes', None) if preview_geom else None
+        if not face_defs or not shape_boxes:
+            face_defs = (
+                ((0, 1, 0), ((0, 1, 1), (1, 1, 1), (1, 1, 0), (0, 1, 0)), 1.18),
+                ((0, -1, 0), ((0, 0, 0), (1, 0, 0), (1, 0, 1), (0, 0, 1)), 0.48),
+                ((0, 0, 1), ((0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)), 0.86),
+                ((1, 0, 0), ((1, 0, 1), (1, 0, 0), (1, 1, 0), (1, 1, 1)), 0.76),
+                ((0, 0, -1), ((1, 0, 0), (0, 0, 0), (0, 1, 0), (1, 1, 0)), 0.68),
+                ((-1, 0, 0), ((0, 0, 0), (0, 0, 1), (0, 1, 1), (0, 1, 0)), 0.60),
+            )
+            shape_boxes = lambda _shape_id, _variant: [(0.0, 0.0, 0.0, 1.0, 1.0, 1.0, True)]
         faces = []
-        for (x, y, z), bid in by_pos.items():
-            for normal, maker in face_defs:
-                if (x + normal[0], y + normal[1], z + normal[2]) in occupied:
-                    continue
-                pts3 = maker(x, y, z)
-                projected = [self._project3(p, camera) for p in pts3]
-                if not all(projected):
-                    continue
-                pts2 = [(p[0], p[1]) for p in projected]
-                if not self._poly_on_screen(pts2, int(camera['cx'] * 2), int(camera['cy'] / 0.55), pad=80):
-                    continue
-                depth = sum(p[2] for p in projected) / len(projected)
-                seed = (x * 73856093) ^ (y * 19349663) ^ (z * 83492791)
-                faces.append((depth, pts2, bid, normal, seed))
+        screen_w = int(camera.get('width') or camera['cx'] * 2)
+        screen_h = int(camera.get('height') or camera['cy'] / 0.55)
+        for rec in records:
+            x, y, z, bid, props = self._preview_rec_parts(rec)
+            ix, iy, iz = int(x), int(y), int(z)
+            shape_id, variant = self._gpu_shape(bd.strip_ns(bid), props)
+            for x0, y0, z0, x1, y1, z1, occluding in shape_boxes(shape_id, variant):
+                sx, sy, sz = x1 - x0, y1 - y0, z1 - z0
+                for normal, corners, _light in face_defs:
+                    if occluding and (ix + normal[0], iy + normal[1], iz + normal[2]) in occupied:
+                        continue
+                    pts3 = [(ix + x0 + cx * sx, iy + y0 + cy * sy, iz + z0 + cz * sz)
+                            for cx, cy, cz in corners]
+                    projected = [self._project3(p, camera) for p in pts3]
+                    if not all(projected):
+                        continue
+                    pts2 = [(p[0], p[1]) for p in projected]
+                    if not self._poly_on_screen(pts2, screen_w, screen_h, pad=80):
+                        continue
+                    depth = sum(p[2] for p in projected) / len(projected)
+                    seed = (ix * 73856093) ^ (iy * 19349663) ^ (iz * 83492791)
+                    faces.append((depth, pts2, bid, normal, seed))
         faces.sort(key=lambda f: f[0], reverse=True)
         return faces
 
@@ -2881,8 +2917,6 @@ class DashboardApp:
             except Exception:
                 tex = None
             if tex is not None and self._paste_preview_texture(canvas, tex, poly, factor):
-                if size >= 9:
-                    draw.polygon(poly, outline=self._shade(color, 0.62))
                 return
         draw.polygon(poly, fill=fill, outline=outline if size >= 5 else None)
         if size >= 8:
@@ -3030,16 +3064,17 @@ class DashboardApp:
         draw.polygon(right, fill=self._shade(color, .58), outline=outline)
         draw.polygon(top, fill=self._shade(color, 1.08), outline=outline)
 
-    def _render_records(self, max_blocks=12000):
-        if self.loaded_nbt is None:
-            return []
+    def _target_map(self):
         target_map = {}
         for conv in self._all_records():
             target = self._target_for(conv)
             mapped = bd.strip_ns(conv.source) if target == KEEP else bd.strip_ns(target)
             target_map[conv.source] = mapped
             target_map[bd.strip_ns(conv.source)] = mapped
-        raw_records = self._source_render_records(max_blocks=max_blocks)
+        return target_map
+
+    def _map_render_records(self, raw_records):
+        target_map = self._target_map()
         records = []
         for rec in raw_records:
             x, y, z, source = rec[:4]
@@ -3047,6 +3082,12 @@ class DashboardApp:
             base = bd.strip_ns(source)
             records.append((x, y, z, target_map.get(source, target_map.get(base, base)), props))
         return records
+
+    def _render_records(self, max_blocks=12000):
+        if self.loaded_nbt is None:
+            return []
+        raw_records = self._source_render_records(max_blocks=max_blocks)
+        return self._map_render_records(raw_records)
 
     def _source_occupied_positions(self):
         if self.loaded_nbt is None:
