@@ -661,6 +661,56 @@ _MAT_JP = {
     'bricks_block': 'レンガ',
 }
 
+_TOKEN_JP = {
+    'block': 'ブロック', 'bricks': 'レンガ', 'brick': 'レンガ', 'tiles': 'タイル', 'tile': 'タイル',
+    'pillar': '柱', 'chiseled': '模様入り', 'cracked': 'ひび割れた', 'polished': '磨かれた',
+    'smooth': '滑らかな', 'cut': '研がれた', 'mossy': '苔むした', 'stripped': '樹皮を剥いだ',
+    'waxed': '錆止めされた', 'exposed': '風化し始めた', 'weathered': '風化した', 'oxidized': '酸化した',
+    'stairs': '階段', 'slab': 'ハーフブロック', 'wall': '塀', 'fence': 'フェンス',
+    'gate': 'ゲート', 'door': 'ドア', 'trapdoor': 'トラップドア', 'button': 'ボタン',
+    'pressure': '感圧', 'plate': '板', 'sign': '看板', 'hanging': '吊り', 'leaves': '葉',
+    'sapling': '苗木', 'log': '原木', 'wood': '木', 'stem': '幹', 'hyphae': '菌糸',
+    'glass': 'ガラス', 'pane': '板', 'stained': '色付き', 'concrete': 'コンクリート',
+    'powder': 'パウダー', 'terracotta': 'テラコッタ', 'glazed': '彩釉',
+    'wool': '羊毛', 'carpet': 'カーペット', 'candle': 'ろうそく', 'banner': '旗',
+    'shulker': 'シュルカー', 'box': 'ボックス', 'ore': '鉱石', 'raw': '原石',
+    'deepslate': '深層岩', 'stone': '石', 'blackstone': '黒石', 'sandstone': '砂岩',
+    'sand': '砂', 'red': '赤い', 'blue': '青い', 'green': '緑の', 'yellow': '黄色の',
+    'white': '白色の', 'black': '黒色の', 'gray': '灰色の', 'light': '薄い',
+    'dark': '暗い', 'pink': '桃色の', 'purple': '紫色の', 'cyan': '青緑色の',
+    'lime': '黄緑色の', 'orange': '橙色の', 'magenta': '赤紫色の', 'brown': '茶色の',
+    'iron': '鉄', 'gold': '金', 'copper': '銅', 'diamond': 'ダイヤモンド', 'emerald': 'エメラルド',
+    'lapis': 'ラピスラズリ', 'coal': '石炭', 'quartz': 'クォーツ', 'nether': 'ネザー',
+    'end': 'エンド', 'sea': 'シー', 'lantern': 'ランタン', 'glowstone': 'グロウストーン',
+    'froglight': 'フロッグライト', 'prismarine': 'プリズマリン', 'purpur': 'プルプァ',
+    'basalt': '玄武岩', 'calcite': '方解石', 'tuff': '凝灰岩', 'dripstone': '鍾乳石',
+    'granite': '花崗岩', 'diorite': '閃緑岩', 'andesite': '安山岩', 'obsidian': '黒曜石',
+}
+
+
+def _token_fallback_jp(mat):
+    parts = [p for p in mat.split('_') if p]
+    if not parts:
+        return mat
+    translated = []
+    known = 0
+    i = 0
+    while i < len(parts):
+        two = '_'.join(parts[i:i + 2])
+        if two in _MAT_JP:
+            translated.append(_MAT_JP[two])
+            known += 2
+            i += 2
+            continue
+        token = parts[i]
+        if token in _TOKEN_JP:
+            translated.append(_TOKEN_JP[token])
+            known += 1
+        else:
+            translated.append(token)
+        i += 1
+    return ''.join(translated) if known else mat
+
 
 def jp_material(mat):
     if mat in _MAT_JP:
@@ -677,7 +727,7 @@ def jp_material(mat):
     for pre, jp in _PREFIX_JP:
         if mat.startswith(pre):
             return jp + jp_material(mat[len(pre):])
-    return mat
+    return _token_fallback_jp(mat)
 
 
 def jp_name(bid):

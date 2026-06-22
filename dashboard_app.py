@@ -16,7 +16,7 @@ except Exception:
     DND_FILES = None
     _HAS_DND = False
 
-from PIL import Image, ImageDraw, ImageTk
+from PIL import Image, ImageDraw, ImageFont, ImageTk
 
 import blockdata as bd
 import converter
@@ -48,17 +48,17 @@ CATEGORY_BY_LABEL = {label: key for key, label in CATEGORY_LABELS}
 CATEGORY_NAME = {key: label for key, label in CATEGORY_LABELS}
 
 UI = {
-    'BG': '#07101d', 'SIDEBAR': '#081320', 'HEADER': '#07111f',
-    'PANEL': '#101b2a', 'PANEL_2': '#142234', 'PANEL_3': '#1b2b42',
-    'ROW': '#101c2d', 'ROW_ALT': '#142235', 'BORDER': '#2a3a55',
-    'BORDER_HI': '#5b8cff', 'TEXT': '#f4f8ff', 'TEXT_SOFT': '#d6e1f4',
-    'MUTED': '#91a1bc', 'MUTED_2': '#64738e', 'ACCENT': '#3d8bff',
-    'ACCENT_2': '#6aa9ff', 'ACCENT_3': '#8f7dff', 'ACCENT_DK': '#1f62d8',
-    'CYAN': '#35d8e6', 'GREEN': '#31d084', 'ORANGE': '#ffb84d',
-    'RED': '#ff6f7d', 'BTN_BG': '#1c2b40', 'BTN_BG_2': '#22344d',
-    'KEEP_BG': '#263246', 'TARGET_BG': '#1f3a36', 'REC_BG': '#2a2555',
-    'HOVER': '#2a3d59', 'CARD': '#101b2a', 'BADGE_BG': '#263653',
-    'BADGE_FG': '#b6ccff', 'NBADGE_BG': '#252f42', 'NBADGE_FG': '#a9b6cc',
+    'BG': '#000000', 'SIDEBAR': '#0b0b0f', 'HEADER': '#000000',
+    'PANEL': '#1c1c1e', 'PANEL_2': '#2c2c2e', 'PANEL_3': '#3a3a3c',
+    'ROW': '#1c1c1e', 'ROW_ALT': '#242427', 'BORDER': '#38383a',
+    'BORDER_HI': '#0a84ff', 'TEXT': '#ffffff', 'TEXT_SOFT': '#f2f2f7',
+    'MUTED': '#8e8e93', 'MUTED_2': '#636366', 'ACCENT': '#0a84ff',
+    'ACCENT_2': '#64d2ff', 'ACCENT_3': '#5e5ce6', 'ACCENT_DK': '#006edb',
+    'CYAN': '#64d2ff', 'GREEN': '#30d158', 'ORANGE': '#ff9f0a',
+    'RED': '#ff453a', 'BTN_BG': '#2c2c2e', 'BTN_BG_2': '#3a3a3c',
+    'KEEP_BG': '#2c2c2e', 'TARGET_BG': '#123326', 'REC_BG': '#2d285f',
+    'HOVER': '#3a3a3c', 'CARD': '#1c1c1e', 'BADGE_BG': '#2c2c2e',
+    'BADGE_FG': '#d7e7ff', 'NBADGE_BG': '#2c2c2e', 'NBADGE_FG': '#c7c7cc',
 }
 
 
@@ -203,6 +203,101 @@ class RoundedButton(tk.Canvas):
                          font=self.font, justify='center')
 
 
+class InteractivePreview(tk.Canvas):
+    def __init__(self, parent, app, width=318, height=190):
+        super().__init__(parent, width=width, height=height, bg=UI['PANEL_2'],
+                         highlightthickness=0, bd=0, relief='flat', cursor='fleur')
+        self.app = app
+        self.yaw = -38.0
+        self.pitch = 0.34
+        self.zoom = 1.0
+        self.mode = 'orbit'
+        self._photo = None
+        self._drag = None
+        self._after_id = None
+        self.bind('<Configure>', lambda _e: self.refresh())
+        self.bind('<Enter>', self._on_enter)
+        self.bind('<ButtonPress-1>', self._on_press)
+        self.bind('<B1-Motion>', self._on_drag)
+        self.bind('<ButtonRelease-1>', lambda _e: setattr(self, '_drag', None))
+        self.bind('<MouseWheel>', self._on_wheel)
+        self.bind('<Double-Button-1>', self.toggle_mode)
+        self.refresh(immediate=True)
+
+    def _on_enter(self, _event):
+        self.app._wheel_target = None
+        self.focus_set()
+
+    def _on_press(self, event):
+        self._drag = (event.x, event.y, self.yaw, self.pitch)
+
+    def _on_drag(self, event):
+        if not self._drag:
+            return
+        x0, y0, yaw0, pitch0 = self._drag
+        self.yaw = yaw0 + (event.x - x0) * 0.38
+        self.pitch = max(-0.12, min(0.88, pitch0 + (y0 - event.y) * 0.004))
+        self.refresh()
+
+    def _on_wheel(self, event):
+        factor = 1.12 if event.delta > 0 else 0.89
+        self.zoom = max(0.45, min(3.4, self.zoom * factor))
+        self.refresh()
+        return 'break'
+
+    def toggle_mode(self, _event=None):
+        self.mode = 'walk' if self.mode == 'orbit' else 'orbit'
+        self.zoom = max(0.85, min(1.7, self.zoom))
+        self.refresh(immediate=True)
+
+    def reset_view(self):
+        self.yaw = -38.0
+        self.pitch = 0.34
+        self.zoom = 1.0
+        self.mode = 'orbit'
+        self.refresh(immediate=True)
+
+    def refresh(self, immediate=False):
+        if self._after_id:
+            try:
+                self.after_cancel(self._after_id)
+            except tk.TclError:
+                pass
+            self._after_id = None
+        if immediate:
+            self._render()
+        else:
+            self._after_id = self.after(55, self._render)
+
+    def view_state(self):
+        return {
+            'yaw': self.yaw,
+            'pitch': self.pitch,
+            'zoom': self.zoom,
+            'mode': self.mode,
+        }
+
+    def _render(self):
+        self._after_id = None
+        w = max(260, self.winfo_width())
+        h = max(150, self.winfo_height())
+        im = self.app._render_schematic_preview(w, h, max_blocks=6500, view=self.view_state())
+        self._photo = ImageTk.PhotoImage(im)
+        self.delete('all')
+        self.create_image(0, 0, image=self._photo, anchor='nw')
+        self._draw_overlay(w, h)
+
+    def _draw_overlay(self, w, h):
+        mode_text = '内部視点' if self.mode == 'walk' else '外観'
+        zoom_text = '%d%%' % int(self.zoom * 100)
+        self.create_rectangle(10, 10, 156, 36, fill='#000000', outline='', stipple='gray50')
+        self.create_text(20, 23, text='%s  %s' % (mode_text, zoom_text), anchor='w',
+                         fill='#ffffff', font=('Yu Gothic UI', 9, 'bold'))
+        self.create_rectangle(10, h - 32, w - 10, h - 10, fill='#000000', outline='', stipple='gray50')
+        self.create_text(w / 2, h - 21, text='ドラッグで回転  /  ホイールでズーム  /  ダブルクリックで視点切替',
+                         fill='#ffffff', font=('Yu Gothic UI', 8))
+
+
 def block_category(bid):
     base = bd.strip_ns(bid)
     fam = bd.family_of(base)
@@ -276,6 +371,7 @@ class DashboardApp:
         self.rows = []
         self._wheel_target = None
         self._wheel_bound = False
+        self._preview_source_cache = {}
         self._regid2file = {}
         self.active_filter = 'all'
         self.preview_tab = 'overview'
@@ -360,26 +456,21 @@ class DashboardApp:
         self._set_centered_geometry(self.root, 1280, 720)
         self.root.minsize(1100, 660)
         self.root.grid_rowconfigure(1, weight=1)
-        self.root.grid_columnconfigure(1, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
         self._configure_style()
 
-        self.sidebar = tk.Frame(self.root, bg=UI['SIDEBAR'], width=74)
-        self.sidebar.grid(row=0, column=0, rowspan=3, sticky='ns')
-        self.sidebar.grid_propagate(False)
-
         self.header = tk.Frame(self.root, bg=UI['HEADER'], height=62)
-        self.header.grid(row=0, column=1, sticky='ew')
+        self.header.grid(row=0, column=0, sticky='ew')
         self.header.grid_propagate(False)
 
         self.main = tk.Frame(self.root, bg=UI['BG'])
-        self.main.grid(row=1, column=1, sticky='nsew', padx=16, pady=(12, 8))
+        self.main.grid(row=1, column=0, sticky='nsew', padx=16, pady=(12, 8))
 
         self.footer = tk.Frame(self.root, bg=UI['HEADER'], height=54)
-        self.footer.grid(row=2, column=1, sticky='ew')
+        self.footer.grid(row=2, column=0, sticky='ew')
         self.footer.grid_propagate(False)
 
         self._register_drop(self.root)
-        self._build_sidebar()
         self._build_header()
         self._build_main()
         self._build_footer()
@@ -563,6 +654,7 @@ class DashboardApp:
         row = tk.Frame(body, bg=UI['BG'])
         row.grid(row=1, column=0, sticky='ew', pady=(12, 0))
         self._button(row, 'PNGとして保存', self.export_preview, bg=UI['ACCENT']).pack(side='left', padx=(0, 8))
+        self._button(row, '建材リストPNG', self.export_materials_image, bg=UI['ACCENT']).pack(side='left', padx=(0, 8))
         self._button(row, 'CSVを書き出し', self.export_mapping_csv, bg=UI['BTN_BG_2']).pack(side='left', padx=(0, 8))
         self._button(row, '閉じる', top.destroy, bg='#0d1726').pack(side='right')
 
@@ -637,6 +729,7 @@ class DashboardApp:
         _top, body = self._dialog('出力メニュー', 560, 430)
         for label, desc, cmd in [
             ('プレビューPNGを書き出し', '現在の変換設定を反映したMinecraft風プレビュー画像を保存します。', self.export_preview),
+            ('建材リストPNGを書き出し', '必要な建材と変換先をアイコン付きの画像で保存します。', self.export_materials_image),
             ('マッピングCSVを書き出し', 'ブロックごとの変換先と状態をCSVで保存します。', self.export_mapping_csv),
             ('プロジェクトJSONを保存', '現在のルールとメモを保存します。', self.save_project),
             ('出力フォルダを開く', '最後に変換したファイルのフォルダを開きます。', self.open_last_output_folder),
@@ -853,7 +946,7 @@ class DashboardApp:
     def _build_header(self):
         self.header.grid_columnconfigure(0, weight=1)
         left = tk.Frame(self.header, bg=UI['HEADER'])
-        left.grid(row=0, column=0, sticky='w', padx=6, pady=8)
+        left.grid(row=0, column=0, sticky='w', padx=18, pady=8)
         self._label(left, '設計図自動素材変換ツール', size=16, weight='bold',
                     bg=UI['HEADER']).pack(anchor='w')
         self._label(left, '設計図を読み込み、素材を自動で変換・最適化します',
@@ -869,10 +962,14 @@ class DashboardApp:
                                       size=8, fg=UI['GREEN'], bg=UI['HEADER'])
         self.save_state.pack(side='left', padx=(0, 14))
         self._button(right, '▣ プロジェクトを保存', self.save_project,
-                     bg='#0d1726', size=8, padx=10, pady=4).pack(side='left', padx=4)
-        self._button(right, '☼', self.toggle_focus_mode, bg='#0d1726', size=10,
+                     bg=UI['BTN_BG'], size=8, padx=10, pady=4).pack(side='left', padx=4)
+        self._button(right, '履歴', self.open_history_dialog, bg=UI['BTN_BG'],
+                     size=8, padx=10, pady=4).pack(side='left', padx=4)
+        self._button(right, '設定', self.open_settings_dialog, bg=UI['BTN_BG'],
+                     size=8, padx=10, pady=4).pack(side='left', padx=4)
+        self._button(right, '☼', self.toggle_focus_mode, bg=UI['BTN_BG'], size=10,
                      padx=8, pady=4).pack(side='left', padx=4)
-        self._button(right, 'Studio Build  プロ', self.open_build_dialog, bg='#0d1726',
+        self._button(right, 'Studio Build', self.open_build_dialog, bg=UI['BTN_BG'],
                      size=8, padx=10, pady=4).pack(side='left', padx=4)
 
     def _build_main(self):
@@ -1081,37 +1178,46 @@ class DashboardApp:
         panel = self._panel(self.right_col)
         panel.grid(row=0, column=0, sticky='nsew')
         panel.grid_columnconfigure(0, weight=1)
-        panel.grid_rowconfigure(3, weight=1)
+        panel.grid_rowconfigure(4, weight=1)
         self._label(panel, '変換結果プレビュー', size=10, weight='bold').grid(
             row=0, column=0, sticky='w', padx=12, pady=(10, 6))
-        self._label(panel, '● ライブ更新', size=8, fg=UI['GREEN']).grid(
+        self._label(panel, '● リアルタイム更新', size=8, fg=UI['GREEN']).grid(
             row=0, column=0, sticky='e', padx=12, pady=(10, 6))
-        img = self._result_preview_image(318, 96)
-        prev = tk.Label(panel, image=img, bg=UI['PANEL'])
-        prev.image = img
-        prev.grid(row=1, column=0, sticky='ew', padx=12)
+        self.preview_view = InteractivePreview(panel, self, width=318, height=205)
+        self.preview_view.grid(row=1, column=0, sticky='ew', padx=12, pady=(0, 8))
+
+        controls = tk.Frame(panel, bg=UI['PANEL'])
+        controls.grid(row=2, column=0, sticky='ew', padx=12, pady=(0, 8))
+        self._button(controls, '外観', lambda: self._set_preview_mode('orbit'),
+                     bg=UI['BTN_BG_2'], size=8, padx=12, pady=5).pack(side='left', padx=(0, 6))
+        self._button(controls, '内部視点', lambda: self._set_preview_mode('walk'),
+                     bg=UI['BTN_BG_2'], size=8, padx=12, pady=5).pack(side='left', padx=(0, 6))
+        self._button(controls, 'リセット', self._reset_preview_view,
+                     bg=UI['BTN_BG'], size=8, padx=12, pady=5).pack(side='left')
 
         tabs = tk.Frame(panel, bg=UI['PANEL'])
-        tabs.grid(row=2, column=0, sticky='ew', padx=12, pady=(8, 8))
+        tabs.grid(row=3, column=0, sticky='ew', padx=12, pady=(0, 8))
         for key, label in [('overview', '概要'), ('materials', '必要素材'), ('stats', '詳細統計')]:
             self._button(tabs, label, lambda k=key: self.set_preview_tab(k),
-                         bg=('#20255d' if self.preview_tab == key else '#0e192a'),
+                         bg=(UI['ACCENT'] if self.preview_tab == key else UI['BTN_BG']),
                          size=8, padx=16, pady=5).pack(side='left', fill='x', expand=True, padx=(0, 4))
 
         self.preview_body = tk.Frame(panel, bg=UI['PANEL'])
-        self.preview_body.grid(row=3, column=0, sticky='nsew', padx=12)
+        self.preview_body.grid(row=4, column=0, sticky='nsew', padx=12)
         self._build_preview_body()
 
         actions = tk.Frame(panel, bg=UI['PANEL'])
-        actions.grid(row=4, column=0, sticky='ew', padx=12, pady=(8, 12))
+        actions.grid(row=5, column=0, sticky='ew', padx=12, pady=(8, 12))
         self.start_btn = self._button(actions, '▶ 変換を実行', self.do_convert, bg=UI['ACCENT'],
                                       fg='white', size=11, padx=12, pady=10,
                                       state='normal' if self.loaded_nbt is not None else 'disabled')
         self.start_btn.pack(fill='x')
         bottom = tk.Frame(actions, bg=UI['PANEL'])
         bottom.pack(fill='x', pady=(8, 0))
-        self._button(bottom, '⇩ プレビューをエクスポート', self.export_preview,
+        self._button(bottom, '⇩ プレビューを書き出し', self.export_preview,
                      bg='#0f1c31', size=8, pady=6).pack(side='left', fill='x', expand=True)
+        self._button(bottom, '建材リスト', self.export_materials_image,
+                     bg='#0f1c31', size=8, padx=10, pady=6).pack(side='left', padx=(6, 0))
         self._button(bottom, '⌄', self.open_export_menu, bg='#0f1c31', size=8, padx=10, pady=6).pack(side='right', padx=(6, 0))
 
     def _build_footer(self):
@@ -1195,6 +1301,7 @@ class DashboardApp:
         self.loaded_nbt = nbt
         self.last_output = None
         self.overrides = {}
+        self._preview_source_cache = {}
         self._apply_dataversion(nbt)
         self._sync_progress(52, '進行状況: ブロックパレットを解析中...')
         self._rescan()
@@ -1470,12 +1577,32 @@ class DashboardApp:
         if hasattr(self, 'preview_body'):
             self._build_preview_body()
 
+    def _set_preview_mode(self, mode):
+        if hasattr(self, 'preview_view'):
+            self.preview_view.mode = mode
+            if mode == 'walk':
+                self.preview_view.zoom = max(0.9, self.preview_view.zoom)
+            self.preview_view.refresh(immediate=True)
+
+    def _reset_preview_view(self):
+        if hasattr(self, 'preview_view'):
+            self.preview_view.reset_view()
+
+    def _refresh_preview_only(self):
+        self.image_cache = {}
+        if hasattr(self, 'preview_view'):
+            self.preview_view.refresh()
+        if hasattr(self, 'preview_body'):
+            self._build_preview_body()
+
     # ---------------------------------------------------------------- preview
     def _build_preview_body(self):
         for w in self.preview_body.winfo_children():
             w.destroy()
         stats = self._stats()
         if self.preview_tab == 'materials':
+            self._button(self.preview_body, '建材リストPNGを書き出し', self.export_materials_image,
+                         bg=UI['ACCENT'], size=8, padx=12, pady=6).pack(fill='x', pady=(0, 8))
             for label, value in self._top_materials():
                 self._metric_line(self.preview_body, label, value)
             return
@@ -1574,10 +1701,13 @@ class DashboardApp:
 
         def choose(value):
             self.overrides[conv.source] = value
+            rowdata['target'] = self._target_for(conv)
+            if rowdata.get('btn') is not None:
+                self._refresh_target(rowdata)
             top.destroy()
             self._wheel_target = self.map_canvas if hasattr(self, 'map_canvas') else None
             self._mark_dirty()
-            self._refresh_layout()
+            self._refresh_preview_only()
 
         all_blocks = bd.all_blocks()
 
@@ -1728,6 +1858,144 @@ class DashboardApp:
         im.save(out)
         messagebox.showinfo(APP_TITLE, 'プレビューを書き出しました:\n%s' % out)
 
+    def export_materials_image(self):
+        if self.loaded_nbt is None:
+            messagebox.showinfo(APP_TITLE, '先に設計図を読み込んでください。')
+            return
+        default_name = os.path.splitext(os.path.basename(self.src_path or 'materials'))[0] + '_materials.png'
+        out = filedialog.asksaveasfilename(
+            title='建材リストPNGを書き出し', initialfile=default_name, defaultextension='.png',
+            filetypes=[('PNG', '*.png'), ('すべて', '*.*')])
+        if not out:
+            return
+        im = self._render_materials_image()
+        im.save(out)
+        messagebox.showinfo(APP_TITLE, '建材リスト画像を書き出しました:\n%s' % out)
+
+    def _material_list_rows(self):
+        grouped = {}
+        for conv in self._all_records():
+            target = self._target_for(conv)
+            final_id = bd.strip_ns(conv.source) if target == KEEP else bd.strip_ns(target)
+            item = grouped.setdefault(final_id, {'count': 0, 'sources': set(), 'changed': 0})
+            item['count'] += int(conv.count or 0)
+            source_id = bd.strip_ns(conv.source)
+            item['sources'].add(source_id)
+            if source_id != final_id:
+                item['changed'] += int(conv.count or 0)
+        rows = []
+        for bid, data in grouped.items():
+            sources = sorted(data['sources'])
+            if len(sources) == 1 and sources[0] == bid:
+                detail = 'そのまま使用'
+            elif len(sources) <= 2:
+                detail = '元素材: ' + ' / '.join(bd.jp_name(s) for s in sources)
+            else:
+                detail = '元素材: %s ほか%d件' % (bd.jp_name(sources[0]), len(sources) - 1)
+            rows.append({
+                'id': bid,
+                'name': bd.jp_name(bid),
+                'count': data['count'],
+                'sources': detail,
+                'changed': data['changed'],
+            })
+        rows.sort(key=lambda r: (-r['count'], r['name'], r['id']))
+        return rows
+
+    def _ui_font(self, size, bold=False):
+        candidates = [
+            'C:/Windows/Fonts/YuGothM.ttc' if bold else 'C:/Windows/Fonts/YuGothR.ttc',
+            'C:/Windows/Fonts/meiryob.ttc' if bold else 'C:/Windows/Fonts/meiryo.ttc',
+            'C:/Windows/Fonts/msgothic.ttc',
+        ]
+        for path in candidates:
+            try:
+                if os.path.exists(path):
+                    return ImageFont.truetype(path, size)
+            except Exception:
+                pass
+        return ImageFont.load_default()
+
+    def _draw_fit_text(self, draw, xy, text, font, fill, max_width, fallback_font=None):
+        text = str(text)
+        if draw.textlength(text, font=font) <= max_width:
+            draw.text(xy, text, font=font, fill=fill)
+            return
+        ell = '...'
+        out = text
+        while out and draw.textlength(out + ell, font=font) > max_width:
+            out = out[:-1]
+        if out:
+            draw.text(xy, out + ell, font=font, fill=fill)
+        elif fallback_font:
+            draw.text(xy, ell, font=fallback_font, fill=fill)
+
+    def _render_materials_image(self):
+        rows = self._material_list_rows()
+        count = max(1, len(rows))
+        cols = 1 if count <= 28 else (2 if count <= 90 else 3)
+        width = 1200
+        margin = 42
+        gap = 24
+        header_h = 150
+        row_h = 76 if cols < 3 else 62
+        rows_per_col = int(math.ceil(count / float(cols)))
+        height = header_h + rows_per_col * row_h + 46
+        im = Image.new('RGB', (width, height), '#f2f2f7')
+        draw = ImageDraw.Draw(im)
+        title_font = self._ui_font(34, True)
+        sub_font = self._ui_font(17, False)
+        head_font = self._ui_font(14, True)
+        name_font = self._ui_font(18 if cols < 3 else 15, True)
+        id_font = self._ui_font(12 if cols < 3 else 10, False)
+        count_font = self._ui_font(20 if cols < 3 else 16, True)
+        detail_font = self._ui_font(12 if cols < 3 else 10, False)
+
+        draw.rounded_rectangle([18, 18, width - 18, height - 18], radius=34, fill='#ffffff')
+        title = '建材リスト'
+        subtitle = os.path.basename(self.src_path or '設計図') + ' / 変換後に必要な素材'
+        draw.text((margin, 38), title, font=title_font, fill='#000000')
+        draw.text((margin, 84), subtitle, font=sub_font, fill='#6e6e73')
+        total_blocks = sum(r['count'] for r in rows)
+        summary = '%d種類  /  合計 %s ブロック' % (len(rows), '{:,}'.format(total_blocks))
+        tw = draw.textlength(summary, font=head_font)
+        draw.rounded_rectangle([width - margin - tw - 34, 46, width - margin, 82], radius=18, fill='#e8f2ff')
+        draw.text((width - margin - tw - 17, 54), summary, font=head_font, fill='#007aff')
+        draw.line([(margin, 122), (width - margin, 122)], fill='#d1d1d6', width=1)
+
+        col_w = int((width - margin * 2 - gap * (cols - 1)) / cols)
+        for idx, row in enumerate(rows):
+            col = idx // rows_per_col
+            r = idx % rows_per_col
+            x = margin + col * (col_w + gap)
+            y = header_h + r * row_h
+            fill = '#ffffff' if r % 2 == 0 else '#f7f7fb'
+            draw.rounded_rectangle([x, y, x + col_w, y + row_h - 8], radius=18, fill=fill, outline='#e5e5ea')
+
+            icon_size = 46 if cols < 3 else 38
+            icon = icons.render_block_image(row['id'], icon_size).convert('RGBA')
+            im.paste(icon, (x + 14, y + int((row_h - icon_size - 8) / 2)), icon)
+            tx = x + 14 + icon_size + 12
+            right_w = 88 if cols < 3 else 70
+            max_text = col_w - (tx - x) - right_w - 12
+            self._draw_fit_text(draw, (tx, y + 13), row['name'], name_font, '#1c1c1e', max_text)
+            self._draw_fit_text(draw, (tx, y + 39 if cols < 3 else y + 34), row['id'],
+                                id_font, '#8e8e93', max_text)
+            if row['changed']:
+                self._draw_fit_text(draw, (tx, y + 56 if cols < 3 else y + 48), row['sources'],
+                                    detail_font, '#34a853', max_text)
+            else:
+                self._draw_fit_text(draw, (tx, y + 56 if cols < 3 else y + 48), row['sources'],
+                                    detail_font, '#8e8e93', max_text)
+            count_text = 'x%s' % '{:,}'.format(row['count'])
+            cw = draw.textlength(count_text, font=count_font)
+            draw.text((x + col_w - cw - 16, y + 22 if cols < 3 else y + 18),
+                      count_text, font=count_font, fill='#000000')
+        footer = 'この画像は現在の素材変換設定を反映しています。'
+        fw = draw.textlength(footer, font=id_font)
+        draw.text(((width - fw) / 2, height - 32), footer, font=id_font, fill='#8e8e93')
+        return im
+
     def export_mapping_csv(self):
         if self.loaded_nbt is None:
             messagebox.showinfo(APP_TITLE, '先に設計図を読み込んでください。')
@@ -1808,12 +2076,12 @@ class DashboardApp:
         self.image_cache[key] = img
         return img
 
-    def _render_schematic_preview(self, w, h, max_blocks=12000):
+    def _render_schematic_preview(self, w, h, max_blocks=12000, view=None):
         im = Image.new('RGB', (w, h), '#87c9ff')
         d = ImageDraw.Draw(im)
         records = self._render_records(max_blocks=max_blocks)
         bounds = self._record_bounds(records)
-        camera = self._minecraft_camera(bounds, w, h)
+        camera = self._minecraft_camera(bounds, w, h, view=view)
         self._draw_minecraft_sky(d, w, h)
         self._draw_superflat_ground(d, w, h, camera, bounds)
         if not records:
@@ -1847,21 +2115,40 @@ class DashboardApp:
             'span_z': max(1.0, max_z - min_z),
         }
 
-    def _minecraft_camera(self, bounds, w, h):
+    def _minecraft_camera(self, bounds, w, h, view=None):
+        view = view or {}
         span = max(bounds['span_x'], bounds['span_z'])
         height = bounds['span_y']
-        dist = max(18.0, span * 2.15 + height * 0.85)
-        cam = (
-            bounds['cx'] + dist * 0.78,
-            max(7.5, height * 0.62 + span * 0.28),
-            bounds['cz'] + dist * 1.08,
-        )
-        target = (bounds['cx'], max(0.8, bounds['min_y'] + height * 0.38), bounds['cz'])
+        zoom = max(0.45, min(3.4, float(view.get('zoom', 1.0) or 1.0)))
+        yaw = math.radians(float(view.get('yaw', -38.0) or 0.0))
+        pitch = max(-0.12, min(0.88, float(view.get('pitch', 0.34) or 0.34)))
+        mode = view.get('mode', 'orbit')
+        if mode == 'walk':
+            back = max(4.0, span * 0.95) / zoom
+            ahead = max(4.0, span * 0.55)
+            cam = (bounds['cx'] - math.sin(yaw) * back,
+                   max(1.45, bounds['min_y'] + 1.62 + pitch * 1.2),
+                   bounds['cz'] - math.cos(yaw) * back)
+            target = (bounds['cx'] + math.sin(yaw) * ahead,
+                      max(1.0, bounds['min_y'] + 1.25 + height * 0.18),
+                      bounds['cz'] + math.cos(yaw) * ahead)
+            focal = min(w, h) * (1.55 + zoom * 0.18)
+            cy = h * (0.56 + pitch * 0.08)
+        else:
+            dist = max(12.0, (span * 2.15 + height * 0.85) / zoom)
+            cam = (
+                bounds['cx'] + math.sin(yaw) * dist,
+                max(3.5, height * 0.54 + span * (0.16 + pitch * 0.42)),
+                bounds['cz'] + math.cos(yaw) * dist,
+            )
+            target = (bounds['cx'], max(0.8, bounds['min_y'] + height * 0.38), bounds['cz'])
+            focal = min(w, h) * 1.35
+            cy = h * 0.55
         forward = self._v_norm((target[0] - cam[0], target[1] - cam[1], target[2] - cam[2]))
         right = self._v_norm(self._v_cross(forward, (0.0, 1.0, 0.0)))
         up = self._v_cross(right, forward)
-        return {'pos': cam, 'forward': forward, 'right': right, 'up': up, 'focal': min(w, h) * 1.35,
-                'cx': w / 2.0, 'cy': h * 0.55}
+        return {'pos': cam, 'forward': forward, 'right': right, 'up': up, 'focal': focal,
+                'cx': w / 2.0, 'cy': cy}
 
     def _project3(self, point, camera):
         rel = (point[0] - camera['pos'][0], point[1] - camera['pos'][1], point[2] - camera['pos'][2])
@@ -2073,12 +2360,27 @@ class DashboardApp:
         target_map = {}
         for conv in self._all_records():
             target = self._target_for(conv)
-            target_map[conv.source] = bd.strip_ns(conv.source) if target == KEEP else bd.strip_ns(target)
+            mapped = bd.strip_ns(conv.source) if target == KEEP else bd.strip_ns(target)
+            target_map[conv.source] = mapped
+            target_map[bd.strip_ns(conv.source)] = mapped
+        raw_records = self._source_render_records(max_blocks=max_blocks)
+        records = []
+        for x, y, z, source in raw_records:
+            base = bd.strip_ns(source)
+            records.append((x, y, z, target_map.get(source, target_map.get(base, base))))
+        return records
+
+    def _source_render_records(self, max_blocks=12000):
+        if self.loaded_nbt is None:
+            return []
+        key = (id(self.loaded_nbt), max_blocks)
+        if key in self._preview_source_cache:
+            return self._preview_source_cache[key]
         records = []
         try:
             regs = self.loaded_nbt.get('Regions', {})
             for reg in regs.values():
-                records.extend(self._region_render_records(reg, target_map, max_blocks))
+                records.extend(self._region_source_records(reg, max_blocks))
         except Exception:
             return []
         if len(records) > max_blocks:
@@ -2089,9 +2391,10 @@ class DashboardApp:
             min_y = min(r[1] for r in records)
             min_z = min(r[2] for r in records)
             records = [(x - min_x, y - min_y, z - min_z, bid) for x, y, z, bid in records]
+        self._preview_source_cache[key] = records
         return records
 
-    def _region_render_records(self, reg, target_map, max_blocks):
+    def _region_source_records(self, reg, max_blocks):
         palette = reg.get('BlockStatePalette', [])
         states = reg.get('BlockStates', [])
         pos = self._vec3(reg.get('Position')) or (0, 0, 0)
@@ -2112,7 +2415,14 @@ class DashboardApp:
         dz = 1 if int(size[2]) >= 0 else -1
         out = []
         layer = sx * sz
-        for idx in range(total):
+        if stride > 1:
+            iterable = (y * layer + z * sx + x
+                        for y in range(0, sy, stride)
+                        for z in range(0, sz, stride)
+                        for x in range(0, sx, stride))
+        else:
+            iterable = range(total)
+        for idx in iterable:
             palette_index = self._palette_index_at(longs, bits, mask, idx)
             if palette_index < 0 or palette_index >= len(palette):
                 continue
@@ -2125,10 +2435,7 @@ class DashboardApp:
             rem = idx - y * layer
             z = rem // sx
             x = rem - z * sx
-            if stride > 1 and (x % stride or y % stride or z % stride):
-                continue
-            bid = target_map.get(source, base)
-            out.append((int(pos[0]) + x * dx, int(pos[1]) + y * dy, int(pos[2]) + z * dz, bid))
+            out.append((int(pos[0]) + x * dx, int(pos[1]) + y * dy, int(pos[2]) + z * dz, source))
         return out
 
     def _palette_index_at(self, longs, bits, mask, idx):
