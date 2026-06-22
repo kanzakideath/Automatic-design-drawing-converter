@@ -1,0 +1,126 @@
+{
+ "registries": [
+  {
+   "id": "26.2",
+   "data_version": 4903,
+   "file": "blocks_26.2.txt",
+   "count": 1198,
+   "members": [
+    "26.2"
+   ]
+  },
+  {
+   "id": "26.1.2",
+   "data_version": 4790,
+   "file": "blocks_26.1.2.txt",
+   "count": 1170,
+   "members": [
+    "26.1",
+    "26.1.2"
+   ]
+  },
+  {
+   "id": "1.21.11",
+   "data_version": 4671,
+   "file": "blocks_1.21.11.txt",
+   "count": 1168,
+   "members": [
+    "1.21.10",
+    "1.21.11"
+   ]
+  },
+  {
+   "id": "1.21.8",
+   "data_version": 4440,
+   "file": "blocks_1.21.8.txt",
+   "count": 1107,
+   "members": [
+    "1.21.7",
+    "1.21.8"
+   ]
+  },
+  {
+   "id": "1.21.5",
+   "data_version": 4325,
+   "file": "blocks_1.21.5.txt",
+   "count": 1106,
+   "members": [
+    "1.21.5"
+   ]
+  },
+  {
+   "id": "1.21.4",
+   "data_version": 4189,
+   "file": "blocks_1.21.4.txt",
+   "count": 1097,
+   "members": [
+    "1.21.4"
+   ]
+  },
+  {
+   "id": "1.21.3",
+   "data_version": 4082,
+   "file": "blocks_1.21.3.txt",
+   "count": 1086,
+   "members": [
+    "1.21.3"
+   ]
+  },
+  {
+   "id": "1.21.1",
+   "data_version": 3955,
+   "file": "blocks_1.21.1.txt",
+   "count": 1062,
+   "members": [
+    "1.21.1"
+   ]
+  },
+  {
+   "id": "1.20.1",
+   "data_version": 3465,
+   "file": "blocks_1.20.1.txt",
+   "count": 1005,
+   "members": [
+    "1.20",
+    "1.20.1"
+   ]
+  },
+  {
+   "id": "1.19.4",
+   "data_version": 3337,
+   "file": "blocks_1.19.4.txt",
+   "count": 1000,
+   "members": [
+    "1.19.4"
+   ]
+  },
+  {
+   "id": "1.18.2",
+   "data_version": 2975,
+   "file": "blocks_1.18.2.txt",
+   "count": 900,
+   "members": [
+    "1.17.1",
+    "1.18.2"
+   ]
+  }
+ ],
+ "by_version": {
+  "2730": "blocks_1.18.2.txt",
+  "2975": "blocks_1.18.2.txt",
+  "3337": "blocks_1.19.4.txt",
+  "3463": "blocks_1.20.1.txt",
+  "3465": "blocks_1.20.1.txt",
+  "3955": "blocks_1.21.1.txt",
+  "4082": "blocks_1.21.3.txt",
+  "4189": "blocks_1.21.4.txt",
+  "4325": "blocks_1.21.5.txt",
+  "4438": "blocks_1.21.8.txt",
+  "4440": "blocks_1.21.8.txt",
+  "4556": "blocks_1.21.11.txt",
+  "4671": "blocks_1.21.11.txt",
+  "4786": "blocks_26.1.2.txt",
+  "4790": "blocks_26.1.2.txt",
+  "4903": "blocks_26.2.txt"
+ }
+}

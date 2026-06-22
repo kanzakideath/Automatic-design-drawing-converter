@@ -1,0 +1,3 @@
+# Default update source.
+# The app reads the latest GitHub Release from this repository.
+https://github.com/kanzakideath/Automatic-design-drawing-converter
