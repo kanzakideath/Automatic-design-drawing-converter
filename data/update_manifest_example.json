@@ -1,7 +1,7 @@
 {
-  "version": "1.2.6",
-  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.2.6/SchematicMaterialConverter.exe",
-  "sha256": "fef5f6ef061505f3906ac2d5c37a5db866324322a19cec2fe50803a73db4754b",
-  "notes": "Fix litematic preview loading, remove the default fake preview blocks, allow conversion output with no rules, enlarge the UI, add a large interactive preview, and speed up preview caching.",
+  "version": "1.2.7",
+  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.2.7/SchematicMaterialConverter.exe",
+  "sha256": "29260d82d0537b927f806b322b00a87e6887f8200cb43f6aabd10c4910a96576",
+  "notes": "Render previews from dense surface blocks instead of sparse samples, use full occupancy culling, and raise CPU preview budgets so large schematics display as solid structures.",
   "mandatory": false
 }

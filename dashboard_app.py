@@ -291,7 +291,7 @@ class InteractivePreview(tk.Canvas):
         h = max(150, self.winfo_height())
         try:
             large = w * h >= 260000
-            max_blocks = (560 if large else 360) if self._drag else (2400 if large else 1400)
+            max_blocks = (8000 if large else 4000) if self._drag else (120000 if large else 30000)
             im = self.app._render_schematic_preview(w, h, max_blocks=max_blocks,
                                                     view=self.view_state(), fast=bool(self._drag))
             self._photo = ImageTk.PhotoImage(im)
@@ -2258,7 +2258,7 @@ class DashboardApp:
         key = ('loaded', w, h, self.src_path, icons.minecraft_assets_label())
         if key in self.image_cache:
             return self.image_cache[key]
-        im = self._render_schematic_preview(w, h, max_blocks=480, fast=True)
+        im = self._render_schematic_preview(w, h, max_blocks=12000, fast=True)
         img = ImageTk.PhotoImage(im)
         self.image_cache[key] = img
         return img
@@ -2268,17 +2268,18 @@ class DashboardApp:
                icons.minecraft_assets_label())
         if key in self.image_cache:
             return self.image_cache[key]
-        im = self._render_schematic_preview(w, h, max_blocks=1800, fast=True)
+        im = self._render_schematic_preview(w, h, max_blocks=30000, fast=True)
         img = ImageTk.PhotoImage(im)
         self.image_cache[key] = img
         return img
 
-    def _render_schematic_preview(self, w, h, max_blocks=3000, view=None, fast=False):
+    def _render_schematic_preview(self, w, h, max_blocks=80000, view=None, fast=False):
         if fast:
-            max_blocks = min(max_blocks, 1000)
+            max_blocks = min(max_blocks, 12000)
         im = Image.new('RGB', (w, h), '#87c9ff')
         d = ImageDraw.Draw(im)
         records = self._render_records(max_blocks=max_blocks)
+        occupied = self._source_occupied_positions()
         bounds = self._record_bounds(records)
         camera = self._minecraft_camera(bounds, w, h, view=view)
         self._draw_minecraft_sky(d, w, h)
@@ -2289,13 +2290,14 @@ class DashboardApp:
             return im
 
         self._draw_build_shadow(d, records, camera, w, h, fast=fast)
-        faces = self._visible_block_faces(records, camera)
-        face_limit = 900 if fast else (3600 if w * h >= 260000 else 2400)
+        faces = self._visible_block_faces(records, camera, occupied_positions=occupied)
+        face_limit = 4500 if fast else (52000 if w * h >= 260000 else 18000)
         if len(faces) > face_limit:
             faces = faces[-face_limit:]
+        use_textures = not fast and len(faces) <= 22000
         for depth, poly, bid, normal, seed in faces:
             self._draw_minecraft_face(im, d, poly, self._block_rgb(bid), normal, seed, bid,
-                                      textured=not fast)
+                                      textured=use_textures)
         if not fast:
             self._draw_scene_vignette(d, w, h)
         d.rectangle([0, 0, w - 1, h - 1], outline='#4d79ff')
@@ -2432,8 +2434,8 @@ class DashboardApp:
                 if self._poly_on_screen(poly, w, h, pad=20):
                     draw.polygon(poly, fill='#4a7e2d')
 
-    def _visible_block_faces(self, records, camera):
-        occupied = set((int(x), int(y), int(z)) for x, y, z, _bid in records)
+    def _visible_block_faces(self, records, camera, occupied_positions=None):
+        occupied = occupied_positions or set((int(x), int(y), int(z)) for x, y, z, _bid in records)
         by_pos = {(int(x), int(y), int(z)): bid for x, y, z, bid in records}
         face_defs = [
             ((0, 1, 0), lambda x, y, z: [(x, y + 1, z), (x + 1, y + 1, z), (x + 1, y + 1, z + 1), (x, y + 1, z + 1)]),
@@ -2626,6 +2628,15 @@ class DashboardApp:
             records.append((x, y, z, target_map.get(source, target_map.get(base, base))))
         return records
 
+    def _source_occupied_positions(self):
+        if self.loaded_nbt is None:
+            return set()
+        key = (id(self.loaded_nbt), 'occupied_positions')
+        if key not in self._preview_source_cache:
+            records = self._source_render_records(max_blocks=10 ** 9)
+            self._preview_source_cache[key] = set((int(x), int(y), int(z)) for x, y, z, _bid in records)
+        return self._preview_source_cache[key]
+
     def _source_render_records(self, max_blocks=12000):
         if self.loaded_nbt is None:
             return []
@@ -2639,7 +2650,7 @@ class DashboardApp:
             records = []
             try:
                 regs = self.loaded_nbt.get('Regions', {})
-                source_cap = max(60000, int(max_blocks or 0) * 4)
+                source_cap = max(500000, int(max_blocks or 0) * 2)
                 for reg in regs.values():
                     records.extend(self._region_source_records(reg, source_cap))
             except Exception:
@@ -2650,10 +2661,23 @@ class DashboardApp:
                 min_z = min(r[2] for r in records)
                 records = [(x - min_x, y - min_y, z - min_z, bid) for x, y, z, bid in records]
             self._preview_source_cache[source_key] = records
-        sampled = records
+        surface_key = (id(self.loaded_nbt), 'surface_records')
+        if surface_key in self._preview_source_cache:
+            surface = self._preview_source_cache[surface_key]
+        else:
+            occupied = set((int(x), int(y), int(z)) for x, y, z, _bid in records)
+            surface = []
+            neighbor_dirs = ((0, 1, 0), (0, -1, 0), (1, 0, 0), (-1, 0, 0), (0, 0, 1), (0, 0, -1))
+            for x, y, z, bid in records:
+                ix, iy, iz = int(x), int(y), int(z)
+                if any((ix + dx, iy + dy, iz + dz) not in occupied for dx, dy, dz in neighbor_dirs):
+                    surface.append((x, y, z, bid))
+            self._preview_source_cache[(id(self.loaded_nbt), 'occupied_positions')] = occupied
+            self._preview_source_cache[surface_key] = surface
+        sampled = surface or records
         if len(sampled) > max_blocks:
-            step = len(records) / float(max_blocks)
-            sampled = [records[min(len(records) - 1, int((i + 0.5) * step))]
+            step = len(sampled) / float(max_blocks)
+            sampled = [sampled[min(len(sampled) - 1, int((i + 0.5) * step))]
                        for i in range(max_blocks)]
         self._preview_source_cache[key] = sampled
         return sampled
