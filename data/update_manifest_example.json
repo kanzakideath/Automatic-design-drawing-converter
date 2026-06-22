@@ -1,7 +1,7 @@
 {
-  "version": "1.2.4",
-  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.2.4/SchematicMaterialConverter.exe",
-  "sha256": "3a5184d85385bae41b832b6714bc599f6b3b5c5283172c310ebc47918a49ee08",
-  "notes": "Improve Japanese block names, fix preview tab highlighting, and make the live 3D preview much lighter and non-blocking.",
+  "version": "1.2.5",
+  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.2.5/SchematicMaterialConverter.exe",
+  "sha256": "d25f4bbf24d196128ce9cf655265fa478c88ea8dbf16862407c3729daa383877",
+  "notes": "Show stack counts and shulker-box equivalents on material list image cards.",
   "mandatory": false
 }

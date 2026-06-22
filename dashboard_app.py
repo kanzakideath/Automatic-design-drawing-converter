@@ -2088,7 +2088,7 @@ class DashboardApp:
         margin = 42
         gap = 14
         header_h = 108
-        card_h = 102
+        card_h = 136
         row_gap = 14
         row_count = int(math.ceil(len(rows) / float(cols)))
         height = header_h + row_count * (card_h + row_gap) + 38
@@ -2110,7 +2110,8 @@ class DashboardApp:
 
         title_font = self._ui_font(43, True)
         name_font = self._ui_font(22, True)
-        count_font = self._ui_font(32, True)
+        count_font = self._ui_font(30, True)
+        meta_font = self._ui_font(12, True)
         small_font = self._ui_font(12, False)
 
         draw.text((margin, 35), '建材リスト', font=title_font, fill='#f4f7f8')
@@ -2147,8 +2148,13 @@ class DashboardApp:
             self._draw_fit_text(draw, (tx, y + 18), row['name'], name_font, '#eef3f5',
                                 max_text, fallback_font=small_font)
             count_text = '{:,} 個'.format(int(row['count'] or 0))
-            self._draw_fit_text(draw, (tx, y + 61), count_text, count_font, '#83e47e',
+            self._draw_fit_text(draw, (tx, y + 54), count_text, count_font, '#83e47e',
                                 max_text, fallback_font=small_font)
+            self._draw_fit_text(draw, (tx, y + 91), 'スタック: ' + row['stacks_text'],
+                                meta_font, '#9ac7d8', max_text, fallback_font=small_font)
+            shulker_detail = str(row['shulker_text']).replace('シュルカー ', '', 1)
+            self._draw_fit_text(draw, (tx, y + 112), 'シュルカー: ' + shulker_detail,
+                                meta_font, '#c2d0d6', max_text, fallback_font=small_font)
         return im
 
     def export_mapping_csv(self):
