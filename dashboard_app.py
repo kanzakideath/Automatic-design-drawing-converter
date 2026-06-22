@@ -34,12 +34,12 @@ except Exception:
 APP_TITLE = '設計図自動素材変換ツール'
 KEEP = '__keep__'
 GPU_PREVIEW_BLOCK_LIMIT = 180000
-GPU_PREVIEW_FACE_LIMIT = 240000
-CPU_PREVIEW_IDLE_BLOCK_LIMIT = 5600
-CPU_PREVIEW_IDLE_FACE_LIMIT = 1800
-CPU_PREVIEW_TEXTURE_FACE_LIMIT = 300
-CPU_PREVIEW_DRAG_BLOCK_LIMIT = 650
-CPU_PREVIEW_DRAG_FACE_LIMIT = 240
+GPU_PREVIEW_FACE_LIMIT = 220000
+CPU_PREVIEW_IDLE_BLOCK_LIMIT = 1600
+CPU_PREVIEW_IDLE_FACE_LIMIT = 560
+CPU_PREVIEW_TEXTURE_FACE_LIMIT = 72
+CPU_PREVIEW_DRAG_BLOCK_LIMIT = 96
+CPU_PREVIEW_DRAG_FACE_LIMIT = 28
 
 CATEGORY_LABELS = [
     ('recommended', 'おすすめ（同じ形）'),
@@ -363,7 +363,7 @@ class InteractivePreview(tk.Canvas):
         if immediate:
             self._render()
         else:
-            self._after_id = self.after(8 if self._drag else 18, self._render)
+            self._after_id = self.after(4 if self._drag else 24, self._render)
 
     def view_state(self):
         return {
@@ -382,7 +382,7 @@ class InteractivePreview(tk.Canvas):
         h = max(150, self.winfo_height())
         try:
             large = w * h >= 260000
-            render_scale = 0.46 if self._drag else (0.68 if large else 0.78)
+            render_scale = 0.34 if self._drag else (0.48 if large else 0.62)
             rw = max(220, int(w * render_scale))
             rh = max(135, int(h * render_scale))
             if self._drag:
@@ -405,7 +405,7 @@ class InteractivePreview(tk.Canvas):
                 im = self._last_render_image.copy()
             else:
                 im = self.app._render_schematic_preview(rw, rh, max_blocks=max_blocks,
-                                                        view=state, fast=bool(self._drag),
+                                                        view=state, fast=True,
                                                         face_limit_override=face_limit,
                                                         texture_limit=texture_limit,
                                                         min_face_px=2.4 if not self._drag else 3.2,
@@ -738,11 +738,14 @@ class DashboardApp:
 
     def toggle_focus_mode(self):
         self.focus_mode = not self.focus_mode
-        alpha = 0.96 if self.focus_mode else 1.0
         try:
-            self.root.attributes('-alpha', alpha)
+            self.root.attributes('-alpha', 1.0)
         except tk.TclError:
             pass
+        for widget in self.header.winfo_children():
+            widget.destroy()
+        self._build_header()
+        self._refresh_layout()
         self._sync_progress(text='進行状況: フォーカス表示 %s' % ('ON' if self.focus_mode else 'OFF'))
 
     def toggle_sidebar(self):
@@ -1195,8 +1198,10 @@ class DashboardApp:
                      size=8, padx=10, pady=4).pack(side='left', padx=4)
         self._button(right, '設定', self.open_settings_dialog, bg=UI['BTN_BG'],
                      size=8, padx=10, pady=4).pack(side='left', padx=4)
-        self._button(right, '☼', self.toggle_focus_mode, bg=UI['BTN_BG'], size=10,
-                     padx=8, pady=4).pack(side='left', padx=4)
+        focus_label = '通常表示' if self.focus_mode else 'プレビュースタジオ'
+        self._button(right, focus_label, self.toggle_focus_mode, bg=UI['ACCENT'] if self.focus_mode else UI['BTN_BG'],
+                     fg='white' if self.focus_mode else UI['TEXT'], size=8,
+                     padx=10, pady=4).pack(side='left', padx=4)
         self._button(right, 'Studio Build', self.open_build_dialog, bg=UI['BTN_BG'],
                      size=8, padx=10, pady=4).pack(side='left', padx=4)
 
@@ -1207,10 +1212,24 @@ class DashboardApp:
 
         self.content = tk.Frame(self.main, bg=UI['BG'])
         self.content.grid(row=1, column=0, sticky='nsew', pady=(10, 0))
+        self.content.grid_rowconfigure(0, weight=1)
+
+        if self.focus_mode:
+            self.content.grid_columnconfigure(0, minsize=280, weight=0)
+            self.content.grid_columnconfigure(1, minsize=960, weight=1)
+            self.left_col = tk.Frame(self.content, bg=UI['BG'])
+            self.left_col.grid(row=0, column=0, sticky='nsew', padx=(0, 14))
+            self.center_col = tk.Frame(self.content, bg=UI['BG'])
+            self.right_col = tk.Frame(self.content, bg=UI['BG'])
+            self.right_col.grid(row=0, column=1, sticky='nsew')
+            self.right_col.grid_rowconfigure(0, weight=1)
+            self._build_left_column()
+            self._build_preview_panel()
+            return
+
         self.content.grid_columnconfigure(0, minsize=255, weight=0)
         self.content.grid_columnconfigure(1, minsize=500, weight=2)
         self.content.grid_columnconfigure(2, minsize=720, weight=3)
-        self.content.grid_rowconfigure(0, weight=1)
 
         self.left_col = tk.Frame(self.content, bg=UI['BG'])
         self.left_col.grid(row=0, column=0, sticky='nsew', padx=(0, 14))
@@ -1406,13 +1425,16 @@ class DashboardApp:
         panel = self._panel(self.right_col)
         panel.grid(row=0, column=0, sticky='nsew')
         panel.grid_columnconfigure(0, weight=1)
-        panel.grid_rowconfigure(1, minsize=285, weight=10)
+        preview_min_h = 460 if self.focus_mode else 285
+        preview_w = 980 if self.focus_mode else 680
+        preview_h = 560 if self.focus_mode else 430
+        panel.grid_rowconfigure(1, minsize=preview_min_h, weight=10)
         panel.grid_rowconfigure(6, minsize=0, weight=0)
         self._label(panel, '変換結果プレビュー', size=10, weight='bold').grid(
             row=0, column=0, sticky='w', padx=12, pady=(10, 6))
         self._label(panel, '● リアルタイム更新', size=8, fg=UI['GREEN']).grid(
             row=0, column=0, sticky='e', padx=12, pady=(10, 6))
-        self.preview_view = InteractivePreview(panel, self, width=680, height=430)
+        self.preview_view = InteractivePreview(panel, self, width=preview_w, height=preview_h)
         self.preview_view.grid(row=1, column=0, sticky='nsew', padx=12, pady=(0, 10))
 
         controls = tk.Frame(panel, bg=UI['PANEL'])
@@ -2481,8 +2503,10 @@ class DashboardApp:
         return rec[0], rec[1], rec[2], rec[3], props
 
     def _gpu_preview_payload(self):
-        records = self._render_records(max_blocks=GPU_PREVIEW_BLOCK_LIMIT)
-        occupied = self._source_occupied_positions()
+        records = self._focused_render_records(max_blocks=GPU_PREVIEW_BLOCK_LIMIT)
+        occupied = set((int(self._preview_rec_parts(rec)[0]),
+                        int(self._preview_rec_parts(rec)[1]),
+                        int(self._preview_rec_parts(rec)[2])) for rec in records)
         bounds = self._record_bounds(records)
         atlas, tile_map = self._gpu_texture_atlas(records)
         blocks = []
@@ -2631,7 +2655,10 @@ class DashboardApp:
             occupied = set((int(rec[0]), int(rec[1]), int(rec[2])) for rec in records)
         else:
             records = self._render_records(max_blocks=max_blocks)
-            occupied = self._source_occupied_positions()
+            if fast or int(max_blocks or 0) <= CPU_PREVIEW_IDLE_BLOCK_LIMIT * 2:
+                occupied = set((int(rec[0]), int(rec[1]), int(rec[2])) for rec in records)
+            else:
+                occupied = self._source_occupied_positions()
         bounds = self._record_bounds(records)
         camera = self._minecraft_camera(bounds, w, h, view=view)
         self._draw_minecraft_sky(d, w, h)
@@ -2669,10 +2696,14 @@ class DashboardApp:
                    max(p[1] for p in poly) - min(p[1] for p in poly))
 
     def _focused_render_records(self, max_blocks=5600):
-        raw_records = self._source_surface_records()
+        max_blocks = max(100, int(max_blocks or 5600))
+        if max_blocks <= 6000:
+            source_limit = max(900, int(max_blocks * 1.5))
+        else:
+            source_limit = min(180000, max_blocks)
+        raw_records = self._source_surface_records(max_blocks=source_limit)
         if not raw_records:
             return []
-        max_blocks = max(100, int(max_blocks or 5600))
         source_key = (id(self.loaded_nbt), 'focused_source_records', max_blocks)
         if source_key in self._preview_source_cache:
             focused = self._preview_source_cache[source_key]
@@ -2709,11 +2740,12 @@ class DashboardApp:
         focused.sort(key=lambda rec: (int(rec[1]), int(rec[2]), int(rec[0])))
         return focused
 
-    def _source_surface_records(self):
+    def _source_surface_records(self, max_blocks=60000):
         if self.loaded_nbt is None:
             return []
-        self._source_render_records(max_blocks=500000)
-        return self._preview_source_cache.get((id(self.loaded_nbt), 'surface_records'), [])
+        max_blocks = max(900, int(max_blocks or 60000))
+        records = self._source_render_records(max_blocks=max_blocks)
+        return self._preview_source_cache.get((id(self.loaded_nbt), 'surface_records', max_blocks), records)
 
     def _record_bounds(self, records):
         if not records:
@@ -3104,19 +3136,25 @@ class DashboardApp:
     def _source_render_records(self, max_blocks=12000):
         if self.loaded_nbt is None:
             return []
-        key = (id(self.loaded_nbt), max_blocks)
+        requested = max(1, int(max_blocks or 12000))
+        key = (id(self.loaded_nbt), requested)
         if key in self._preview_source_cache:
             return self._preview_source_cache[key]
-        source_key = (id(self.loaded_nbt), 'all_non_air')
+        full_source = requested >= 500000
+        source_cap = 10 ** 9 if full_source else max(900, min(220000, requested * 2))
+        source_key = (id(self.loaded_nbt), 'all_non_air') if full_source else (
+            id(self.loaded_nbt), 'sample_non_air', source_cap)
         if source_key in self._preview_source_cache:
             records = self._preview_source_cache[source_key]
         else:
             records = []
             try:
                 regs = self.loaded_nbt.get('Regions', {})
-                source_cap = max(500000, int(max_blocks or 0) * 2)
                 for reg in regs.values():
-                    records.extend(self._region_source_records(reg, source_cap))
+                    if not full_source and len(records) >= source_cap:
+                        break
+                    cap_left = source_cap if full_source else max(1, source_cap - len(records))
+                    records.extend(self._region_source_records(reg, cap_left))
             except Exception:
                 return []
             if records:
@@ -3127,7 +3165,7 @@ class DashboardApp:
                             r[4] if len(r) > 4 and isinstance(r[4], dict) else {})
                            for r in records]
             self._preview_source_cache[source_key] = records
-        surface_key = (id(self.loaded_nbt), 'surface_records')
+        surface_key = (id(self.loaded_nbt), 'surface_records', requested)
         if surface_key in self._preview_source_cache:
             surface = self._preview_source_cache[surface_key]
         else:
@@ -3139,13 +3177,14 @@ class DashboardApp:
                 ix, iy, iz = int(x), int(y), int(z)
                 if any((ix + dx, iy + dy, iz + dz) not in occupied for dx, dy, dz in neighbor_dirs):
                     surface.append(rec)
-            self._preview_source_cache[(id(self.loaded_nbt), 'occupied_positions')] = occupied
+            if full_source:
+                self._preview_source_cache[(id(self.loaded_nbt), 'occupied_positions')] = occupied
             self._preview_source_cache[surface_key] = surface
         sampled = surface or records
-        if len(sampled) > max_blocks:
-            step = len(sampled) / float(max_blocks)
+        if len(sampled) > requested:
+            step = len(sampled) / float(requested)
             sampled = [sampled[min(len(sampled) - 1, int((i + 0.5) * step))]
-                       for i in range(max_blocks)]
+                       for i in range(requested)]
         self._preview_source_cache[key] = sampled
         return sampled
 
@@ -3166,9 +3205,18 @@ class DashboardApp:
         dz = 1 if int(size[2]) >= 0 else -1
         out = []
         layer = sx * sz
-        cap = max(max_blocks * 3, 900)
+        cap = max(int(max_blocks or 0), 900)
+        if cap >= 10 ** 8:
+            index_iter = range(total)
+        else:
+            scan_budget = min(total, max(6000, cap * 8))
+            if scan_budget >= total:
+                index_iter = range(total)
+            else:
+                step = total / float(scan_budget)
+                index_iter = (min(total - 1, int((i + 0.5) * step)) for i in range(scan_budget))
         seen = 0
-        for idx in range(total):
+        for idx in index_iter:
             palette_index = self._palette_index_at(longs, bits, mask, idx)
             if palette_index < 0 or palette_index >= len(palette):
                 continue

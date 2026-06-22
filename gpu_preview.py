@@ -230,14 +230,15 @@ def build_mesh(payload):
     occupied = payload.get('occupied') or set()
     atlas_uvs = payload.get('atlas_uvs') or [(0.0, 0.0, 1.0, 1.0)]
     max_faces = int(payload.get('max_faces') or 260000)
-    face_total = _count_exposed_faces(blocks, occupied)
-    stride = max(1, int(math.ceil(face_total / float(max_faces)))) if max_faces > 0 else 1
+    estimated_faces = max(1, len(blocks) * 3)
+    stride = max(1, int(math.ceil(estimated_faces / float(max_faces)))) if max_faces > 0 else 1
 
     positions = array('f')
     colors = array('B')
     tex_coords = array('f')
     indices = array('I')
     face_index = 0
+    face_total = 0
     emitted_faces = 0
 
     for block in blocks:
@@ -258,7 +259,11 @@ def build_mesh(payload):
             for normal, corners, light in FACE_DEFS:
                 if occluding and (ix + normal[0], iy + normal[1], iz + normal[2]) in occupied:
                     continue
+                face_total += 1
                 if face_index % stride:
+                    face_index += 1
+                    continue
+                if max_faces > 0 and emitted_faces >= max_faces:
                     face_index += 1
                     continue
                 light_value = max(0, min(255, int(255 * light)))

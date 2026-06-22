@@ -1,7 +1,7 @@
 {
-  "version": "1.3.7",
-  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.3.7/SchematicMaterialConverter.exe",
-  "sha256": "5b20d4d76e2bbc1d04a521cb0f2ecc3b04d09d67ba8a26fe407c5f08cbc7407b",
-  "notes": "Refresh the main UI around a larger preview-first layout, keep the primary conversion action visible under the preview, widen the preview column, and make the GPU preview easier to operate with gentler orbit, pan, and zoom controls.",
+  "version": "1.3.8",
+  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.3.8/SchematicMaterialConverter.exe",
+  "sha256": "4d9f6d0f2c2c913d88dbd8e3f9ac7212f7988b8e856b4d4c75c3f62c7c65fc68",
+  "notes": "Add a true Preview Studio mode and make preview interaction much lighter. The embedded preview now uses fast sampled rendering, drag rendering avoids full-block scans, and the OpenGL preview builds its mesh in one pass for faster startup.",
   "mandatory": false
 }
