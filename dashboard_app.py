@@ -239,6 +239,10 @@ class InteractivePreview(tk.Canvas):
         self._last_render_ms = 0
         self._last_render_key = None
         self._last_render_image = None
+        self._gpu_handle = None
+        self._gpu_token = None
+        self._gpu_starting = False
+        self._gpu_error = None
         self.bind('<Configure>', lambda _e: self.refresh())
         self.bind('<Enter>', self._on_enter)
         self.bind('<ButtonPress-1>', lambda e: self._on_press(e, 'rotate'))
@@ -255,6 +259,23 @@ class InteractivePreview(tk.Canvas):
         self.bind('<KeyPress>', self._on_key)
         self._draw_loading(width, height)
         self.refresh()
+
+    def destroy(self):
+        self.close_gpu(wait=False)
+        try:
+            super().destroy()
+        except tk.TclError:
+            pass
+
+    def close_gpu(self, wait=False):
+        handle = self._gpu_handle
+        self._gpu_handle = None
+        self._gpu_starting = False
+        if handle is not None:
+            try:
+                handle.close(wait=wait)
+            except Exception:
+                pass
 
     def _on_enter(self, _event):
         self.app._wheel_target = None
@@ -385,10 +406,133 @@ class InteractivePreview(tk.Canvas):
             'focus_view': self.focus_view,
         }
 
+    def _render_gpu(self, w, h):
+        if self.app.loaded_nbt is None:
+            self.close_gpu(wait=False)
+            self._draw_loading(w, h)
+            return True
+        if preview_geom is None:
+            self.close_gpu(wait=False)
+            self._draw_error(w, h, 'gpu_preview module is not available')
+            return True
+        try:
+            token = self.app._preview_cache_token()
+            if self._gpu_handle is not None and self._gpu_token == token and self._gpu_handle.alive:
+                self._gpu_handle.resize(w, h)
+                self._send_gpu_view()
+                return True
+            if self._gpu_starting and self._gpu_token == token:
+                self._draw_loading(w, h)
+                return True
+
+            self.close_gpu(wait=False)
+            self._gpu_token = token
+            self._gpu_starting = True
+            self._gpu_error = None
+            self._draw_loading(w, h)
+            try:
+                self.update_idletasks()
+                parent_hwnd = int(self.winfo_id())
+            except Exception:
+                parent_hwnd = 0
+            view = self._gpu_view_values()
+
+            def worker(expected_token, parent, width, height, view_values):
+                payload = None
+                error = None
+                try:
+                    payload = self.app._gpu_preview_payload()
+                    if payload.get('blocks') and 'prebuilt_mesh' not in payload:
+                        import gpu_preview
+                        payload['prebuilt_mesh'] = gpu_preview.build_mesh(payload)
+                    payload = dict(payload)
+                    payload.update({
+                        'width': width,
+                        'height': height,
+                        'startup_timeout': 3.0,
+                        'target_fps': 240,
+                        'uncapped_fps': False,
+                        'show_overlay': False,
+                        'force_continuous_redraw': True,
+                        'initial_yaw': view_values[0],
+                        'initial_pitch': view_values[1],
+                        'initial_zoom': view_values[2],
+                        'initial_mode': view_values[3],
+                    })
+                except Exception as exc:
+                    error = exc
+                self.app._safe_after(lambda: self._finish_gpu_embed(expected_token, parent, width, height, payload, error))
+
+            threading.Thread(target=worker, args=(token, parent_hwnd, w, h, view), daemon=True).start()
+            return True
+        except Exception as exc:
+            self.close_gpu(wait=False)
+            self._draw_error(w, h, exc)
+            return True
+
+    def _finish_gpu_embed(self, expected_token, parent_hwnd, width, height, payload, error):
+        self._gpu_starting = False
+        try:
+            if not self.winfo_exists() or self.app.loaded_nbt is None:
+                return
+        except tk.TclError:
+            return
+        if expected_token != self.app._preview_cache_token():
+            self.refresh()
+            return
+        if error is not None:
+            self._gpu_error = error
+            self._draw_error(width, height, error)
+            return
+        if not payload or not payload.get('blocks'):
+            self._draw_error(width, height, 'preview mesh is empty')
+            return
+        try:
+            import gpu_preview
+            self._gpu_handle = gpu_preview.open_embedded_preview_async(payload, parent_hwnd, width, height)
+            self._gpu_token = expected_token
+            self.delete('all')
+            self._send_gpu_view()
+            self._sync_gpu_size()
+            self.after(120, self._sync_gpu_size)
+        except Exception as exc:
+            self._gpu_error = exc
+            self._draw_error(width, height, exc)
+
+    def _gpu_view_values(self):
+        yaw = self.yaw - 10.0
+        pitch = max(-12.0, min(78.0, self.pitch * 108.0))
+        zoom = max(0.18, min(8.0, self.zoom / 1.94))
+        return yaw, pitch, zoom, self.mode
+
+    def _send_gpu_view(self):
+        if self._gpu_handle is None:
+            return
+        try:
+            self._gpu_handle.set_view(*self._gpu_view_values())
+        except Exception:
+            pass
+
+    def _sync_gpu_size(self):
+        if self._gpu_handle is None:
+            return
+        try:
+            self._gpu_handle.resize(max(260, self.winfo_width()), max(150, self.winfo_height()))
+        except Exception:
+            pass
+
+    def _draw_error(self, w, h, exc):
+        self.delete('all')
+        self.create_rectangle(0, 0, w, h, fill='#101820', outline='#4d79ff')
+        self.create_text(w / 2, h / 2, text='GPU preview failed\n%s' % exc,
+                         fill='#ffffff', font=('Yu Gothic UI', 10, 'bold'), justify='center')
+
     def _render(self):
         self._after_id = None
         w = max(260, self.winfo_width())
         h = max(150, self.winfo_height())
+        if self._render_gpu(w, h):
+            return
         try:
             large = w * h >= 260000
             render_scale = 0.24 if self._drag else (0.72 if large else 0.82)
@@ -850,6 +994,11 @@ class DashboardApp:
         self._open_gpu_preview()
 
     def _open_gpu_preview(self):
+        if hasattr(self, 'preview_view'):
+            try:
+                self.preview_view.close_gpu(wait=True)
+            except Exception:
+                pass
         if self.loaded_nbt is None:
             messagebox.showinfo(APP_TITLE, '先に設計図を読み込んでください。')
             return True

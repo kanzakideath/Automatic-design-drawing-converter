@@ -9,14 +9,18 @@ camera while the user rotates or moves around the model.
 from __future__ import annotations
 
 from array import array
+import ctypes
 import math
 import queue
+import sys
 import threading
 import traceback
 
 
 _active_thread = None
 _active_lock = threading.Lock()
+_embedded_handle = None
+_embedded_lock = threading.Lock()
 
 
 FACE_DEFS = (
@@ -52,6 +56,7 @@ DIR_BITS = {'north': 1, 'east': 2, 'south': 4, 'west': 8}
 def open_preview_async(payload):
     """Open a GPU preview window on its own pyglet event-loop thread."""
     global _active_thread
+    close_embedded_preview(wait=True)
     status_q = queue.Queue(maxsize=1)
     with _active_lock:
         if _active_thread is not None and _active_thread.is_alive():
@@ -64,6 +69,110 @@ def open_preview_async(payload):
         return
     if status == 'error':
         raise RuntimeError(detail)
+
+
+class EmbeddedPreviewHandle:
+    """Thread-safe command handle for the Tk-embedded OpenGL preview."""
+
+    def __init__(self, command_q, thread):
+        self._command_q = command_q
+        self._thread = thread
+        self._closed = False
+
+    def _put(self, *cmd):
+        if self._closed:
+            return
+        try:
+            self._command_q.put_nowait(cmd)
+        except Exception:
+            pass
+
+    def resize(self, width, height):
+        self._put('resize', int(width), int(height))
+
+    def set_view(self, yaw, pitch, zoom, mode='orbit'):
+        self._put('set_view', float(yaw), float(pitch), float(zoom), str(mode or 'orbit'))
+
+    def close(self, wait=False):
+        if self._closed:
+            if wait and self._thread is not threading.current_thread():
+                try:
+                    self._thread.join(timeout=1.2)
+                except Exception:
+                    pass
+            return
+        self._closed = True
+        try:
+            self._command_q.put_nowait(('close',))
+        except Exception:
+            pass
+        if wait and self._thread is not threading.current_thread():
+            try:
+                self._thread.join(timeout=1.2)
+            except Exception:
+                pass
+
+    @property
+    def alive(self):
+        try:
+            return self._thread.is_alive()
+        except Exception:
+            return False
+
+
+def close_embedded_preview(wait=False):
+    global _embedded_handle
+    with _embedded_lock:
+        handle = _embedded_handle
+        _embedded_handle = None
+    if handle is not None:
+        handle.close(wait=wait)
+
+
+def open_embedded_preview_async(payload, parent_hwnd, width, height):
+    """Open a borderless OpenGL preview as a child of a Tk widget HWND."""
+    global _embedded_handle
+    parent_hwnd = int(parent_hwnd or 0)
+    if not parent_hwnd:
+        raise RuntimeError('embedded preview parent window is not ready')
+    if _active_thread is not None and _active_thread.is_alive():
+        raise RuntimeError('fullscreen GPU preview is already open')
+
+    command_q = queue.Queue()
+    status_q = queue.Queue(maxsize=1)
+    embedded_payload = dict(payload)
+    embedded_payload.update({
+        'embedded': True,
+        'parent_hwnd': parent_hwnd,
+        'width': max(240, int(width)),
+        'height': max(160, int(height)),
+        'startup_timeout': 3.0,
+        'command_queue': command_q,
+        'show_overlay': False,
+        'force_continuous_redraw': True,
+        'target_fps': 240,
+        'uncapped_fps': False,
+    })
+    thread = threading.Thread(target=_run_embedded_preview_safe,
+                              args=(embedded_payload, status_q),
+                              daemon=True)
+    handle = EmbeddedPreviewHandle(command_q, thread)
+    with _embedded_lock:
+        old = _embedded_handle
+        _embedded_handle = handle
+    if old is not None:
+        old.close(wait=True)
+    thread.start()
+    try:
+        status, detail = status_q.get(timeout=embedded_payload['startup_timeout'])
+    except queue.Empty:
+        return handle
+    if status == 'error':
+        with _embedded_lock:
+            if _embedded_handle is handle:
+                _embedded_handle = None
+        raise RuntimeError(detail)
+    return handle
 
 
 def _run_preview_safe(payload, status_q=None):
@@ -81,6 +190,24 @@ def _run_preview_safe(payload, status_q=None):
         with _active_lock:
             if _active_thread is threading.current_thread():
                 _active_thread = None
+
+
+def _run_embedded_preview_safe(payload, status_q=None):
+    try:
+        _run_preview(payload, status_q)
+    except Exception:
+        if status_q is not None:
+            try:
+                status_q.put_nowait(('error', traceback.format_exc()))
+            except queue.Full:
+                pass
+        traceback.print_exc()
+    finally:
+        global _embedded_handle
+        with _embedded_lock:
+            handle = _embedded_handle
+            if handle is not None and handle._thread is threading.current_thread():
+                _embedded_handle = None
 
 
 def _run_preview(payload, status_q=None):
@@ -374,27 +501,39 @@ class GpuPreviewWindow:
         self.force_continuous_redraw = bool(payload.get('force_continuous_redraw', True))
         self._caption_title = str(payload.get('title') or '全画面プレビュー')
 
+        self.embedded = bool(payload.get('embedded', False))
+        self.command_queue = payload.get('command_queue')
+        self._parent_hwnd = int(payload.get('parent_hwnd') or 0)
+        self._embedded_hwnd = 0
+
         width = int(payload.get('width') or 1280)
         height = int(payload.get('height') or 760)
         kwargs = {'width': width, 'height': height, 'caption': 'Minecraft 全画面プレビュー', 'resizable': True,
                   'vsync': False}
+        if self.embedded:
+            kwargs['resizable'] = False
+            kwargs['style'] = 'borderless'
         if config is not None:
             kwargs['config'] = config
         self.window = pyglet.window.Window(**kwargs)
-        try:
-            screen = self.window.display.get_default_screen()
-            self.window.set_location(
-                int(screen.x + (screen.width - width) / 2),
-                int(screen.y + (screen.height - height) / 2),
-            )
-        except Exception:
-            pass
+        if self.embedded:
+            self._embed_into_parent(width, height)
+        else:
+            try:
+                screen = self.window.display.get_default_screen()
+                self.window.set_location(
+                    int(screen.x + (screen.width - width) / 2),
+                    int(screen.y + (screen.height - height) / 2),
+                )
+            except Exception:
+                pass
         try:
             self.window.set_vsync(False)
         except Exception:
             pass
         self.window.push_handlers(self)
-        self.window.set_minimum_size(860, 520)
+        if not self.embedded:
+            self.window.set_minimum_size(860, 520)
 
         self.program = ShaderProgram(Shader(VERTEX_SHADER, 'vertex'), Shader(FRAGMENT_SHADER, 'fragment'))
         self.texture = self._create_atlas_texture()
@@ -419,6 +558,92 @@ class GpuPreviewWindow:
         except Exception:
             pass
         self._update_overlay_text()
+
+    def _native_hwnd(self):
+        hwnd = getattr(self.window, '_hwnd', 0) or getattr(self.window, '_view_hwnd', 0)
+        return int(getattr(hwnd, 'value', hwnd) or 0)
+
+    def _embed_into_parent(self, width, height):
+        if not sys.platform.startswith('win') or not self._parent_hwnd:
+            return
+        hwnd = self._native_hwnd()
+        if not hwnd:
+            return
+        self._embedded_hwnd = hwnd
+        user32 = ctypes.windll.user32
+        GWL_STYLE = -16
+        GWL_EXSTYLE = -20
+        WS_CHILD = 0x40000000
+        WS_VISIBLE = 0x10000000
+        WS_CLIPSIBLINGS = 0x04000000
+        WS_CLIPCHILDREN = 0x02000000
+        WS_POPUP = 0x80000000
+        WS_CAPTION = 0x00C00000
+        WS_THICKFRAME = 0x00040000
+        WS_MINIMIZEBOX = 0x00020000
+        WS_MAXIMIZEBOX = 0x00010000
+        WS_SYSMENU = 0x00080000
+        WS_EX_APPWINDOW = 0x00040000
+        WS_EX_TOOLWINDOW = 0x00000080
+
+        user32.GetWindowLongW.restype = ctypes.c_long
+        user32.SetWindowLongW.restype = ctypes.c_long
+        style = int(user32.GetWindowLongW(hwnd, GWL_STYLE)) & 0xffffffff
+        style &= ~(WS_POPUP | WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU)
+        style |= WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN
+        user32.SetWindowLongW(hwnd, GWL_STYLE, ctypes.c_long(style).value)
+
+        ex_style = int(user32.GetWindowLongW(hwnd, GWL_EXSTYLE)) & 0xffffffff
+        ex_style &= ~WS_EX_APPWINDOW
+        ex_style |= WS_EX_TOOLWINDOW
+        user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ctypes.c_long(ex_style).value)
+
+        user32.SetParent(hwnd, self._parent_hwnd)
+        self._set_child_window_bounds(width, height, frame_changed=True)
+
+    def _set_child_window_bounds(self, width, height, frame_changed=False):
+        if not self.embedded or not self._embedded_hwnd or not sys.platform.startswith('win'):
+            return
+        user32 = ctypes.windll.user32
+        SWP_NOZORDER = 0x0004
+        SWP_SHOWWINDOW = 0x0040
+        SWP_FRAMECHANGED = 0x0020
+        flags = SWP_NOZORDER | SWP_SHOWWINDOW
+        if frame_changed:
+            flags |= SWP_FRAMECHANGED
+        user32.SetWindowPos(self._embedded_hwnd, 0, 0, 0, max(1, int(width)), max(1, int(height)), flags)
+
+    def _drain_commands(self):
+        if self.command_queue is None:
+            return
+        while True:
+            try:
+                cmd = self.command_queue.get_nowait()
+            except queue.Empty:
+                break
+            if not cmd:
+                continue
+            name = cmd[0]
+            if name == 'close':
+                self.close()
+                return
+            if name == 'resize' and len(cmd) >= 3:
+                width = max(240, int(cmd[1]))
+                height = max(160, int(cmd[2]))
+                try:
+                    self.window.set_size(width, height)
+                except Exception:
+                    pass
+                self._set_child_window_bounds(width, height)
+                self._overlay_dirty = True
+            elif name == 'set_view' and len(cmd) >= 5:
+                self.yaw = float(cmd[1])
+                self.pitch = max(-12.0, min(78.0, float(cmd[2])))
+                self.zoom = max(0.18, min(8.0, float(cmd[3])))
+                self.mode = str(cmd[4] or 'orbit')
+                if self.mode == 'orbit':
+                    self._reset_camera()
+                self._overlay_dirty = True
 
     def _create_atlas_texture(self):
         atlas = self.payload.get('atlas') or {}
@@ -563,6 +788,9 @@ class GpuPreviewWindow:
         )
 
     def update(self, dt):
+        self._drain_commands()
+        if self._closed:
+            return
         self._fps_frames += 1
         self._fps_time += dt
         if self._fps_time >= 0.35:
