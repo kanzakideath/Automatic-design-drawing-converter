@@ -37,6 +37,8 @@ APP_TITLE = '設計図自動素材変換ツール'
 KEEP = '__keep__'
 GPU_PREVIEW_BLOCK_LIMIT = 220000
 GPU_PREVIEW_FACE_LIMIT = 120000
+EMBEDDED_GPU_BLOCK_LIMIT = 8000
+EMBEDDED_GPU_FACE_LIMIT = 12000
 CPU_PREVIEW_IDLE_BLOCK_LIMIT = 1050
 CPU_PREVIEW_IDLE_FACE_LIMIT = 1350
 CPU_PREVIEW_TEXTURE_FACE_LIMIT = 360
@@ -437,11 +439,38 @@ class InteractivePreview(tk.Canvas):
                 self._raise_gpu_view()
                 return True
             if self._gpu_starting and self._gpu_token == token:
+                cache_token = token + (EMBEDDED_GPU_BLOCK_LIMIT, EMBEDDED_GPU_FACE_LIMIT)
+                if (self.app._gpu_payload_cache_token == cache_token
+                        and self.app._gpu_payload_cache is not None
+                        and time.monotonic() - self._gpu_start_time > 1.2):
+                    try:
+                        self.update_idletasks()
+                        parent_hwnd = int(self.winfo_id())
+                    except Exception:
+                        parent_hwnd = 0
+                    payload = dict(self.app._gpu_payload_cache)
+                    view = self._gpu_view_values()
+                    payload.update({
+                        'width': w,
+                        'height': h,
+                        'max_faces': min(int(payload.get('max_faces') or GPU_PREVIEW_FACE_LIMIT), EMBEDDED_GPU_FACE_LIMIT),
+                        'startup_timeout': 3.0,
+                        'target_fps': 240,
+                        'uncapped_fps': False,
+                        'show_overlay': False,
+                        'force_continuous_redraw': True,
+                        'initial_yaw': view[0],
+                        'initial_pitch': view[1],
+                        'initial_zoom': view[2],
+                        'initial_mode': view[3],
+                    })
+                    self._finish_gpu_embed(token, parent_hwnd, w, h, payload, None, self.app._load_generation)
+                    return True
                 if time.monotonic() - self._gpu_start_time > 12.0:
                     self.close_gpu(wait=False)
                     self._gpu_token = None
                 else:
-                    self._draw_loading(w, h)
+                    self._draw_cpu_fallback(w, h)
                     self.after(220, lambda: self.refresh(immediate=True))
                     return True
 
@@ -450,26 +479,30 @@ class InteractivePreview(tk.Canvas):
             self._gpu_starting = True
             self._gpu_start_time = time.monotonic()
             self._gpu_error = None
-            self._draw_loading(w, h)
+            self._draw_cpu_fallback(w, h)
             try:
                 self.update_idletasks()
                 parent_hwnd = int(self.winfo_id())
             except Exception:
                 parent_hwnd = 0
             view = self._gpu_view_values()
+            generation = self.app._load_generation
 
-            def worker(expected_token, parent, width, height, view_values):
+            def worker(expected_token, parent, width, height, view_values, expected_generation):
                 payload = None
                 error = None
                 try:
-                    payload = self.app._gpu_preview_payload()
-                    if payload.get('blocks') and 'prebuilt_mesh' not in payload:
-                        import gpu_preview
-                        payload['prebuilt_mesh'] = gpu_preview.build_mesh(payload)
+                    if self.app._load_generation != expected_generation:
+                        return
+                    payload = self.app._gpu_preview_payload(max_blocks=EMBEDDED_GPU_BLOCK_LIMIT,
+                                                            max_faces=EMBEDDED_GPU_FACE_LIMIT)
+                    if self.app._load_generation != expected_generation:
+                        return
                     payload = dict(payload)
                     payload.update({
                         'width': width,
                         'height': height,
+                        'max_faces': min(int(payload.get('max_faces') or GPU_PREVIEW_FACE_LIMIT), EMBEDDED_GPU_FACE_LIMIT),
                         'startup_timeout': 3.0,
                         'target_fps': 240,
                         'uncapped_fps': False,
@@ -482,22 +515,25 @@ class InteractivePreview(tk.Canvas):
                     })
                 except Exception as exc:
                     error = exc
-                self.app._safe_after(lambda: self._finish_gpu_embed(expected_token, parent, width, height, payload, error))
+                self.app._safe_after(lambda: self._finish_gpu_embed(expected_token, parent, width, height, payload, error, expected_generation))
 
-            threading.Thread(target=worker, args=(token, parent_hwnd, w, h, view), daemon=True).start()
+            threading.Thread(target=worker, args=(token, parent_hwnd, w, h, view, generation), daemon=True).start()
+            self.after(350, lambda: self.refresh(immediate=True))
             return True
         except Exception as exc:
             self.close_gpu(wait=False)
             self._draw_error(w, h, exc)
             return True
 
-    def _finish_gpu_embed(self, expected_token, parent_hwnd, width, height, payload, error):
+    def _finish_gpu_embed(self, expected_token, parent_hwnd, width, height, payload, error, generation=None):
         self._gpu_starting = False
         self._gpu_start_time = 0.0
         try:
             if not self.winfo_exists() or self.app.loaded_nbt is None:
                 return
         except tk.TclError:
+            return
+        if generation is not None and generation != self.app._load_generation:
             return
         if expected_token != self.app._preview_cache_token():
             self.refresh()
@@ -571,6 +607,28 @@ class InteractivePreview(tk.Canvas):
         self.create_rectangle(0, 0, w, h, fill='#101820', outline='#4d79ff')
         self.create_text(w / 2, h / 2, text='GPU preview failed\n%s' % exc,
                          fill='#ffffff', font=('Yu Gothic UI', 10, 'bold'), justify='center')
+
+    def _draw_cpu_fallback(self, w, h, label='GPUプレビュー準備中...'):
+        try:
+            state = self.view_state()
+            rw = max(220, min(520, int(w * 0.55)))
+            rh = max(150, min(320, int(h * 0.55)))
+            im = self.app._render_schematic_preview(rw, rh, max_blocks=900,
+                                                    view=state, fast=True,
+                                                    face_limit_override=900,
+                                                    texture_limit=260,
+                                                    min_face_px=1.2,
+                                                    focus_view=True)
+            if (rw, rh) != (w, h):
+                im = im.resize((w, h), Image.Resampling.NEAREST)
+            self._photo = ImageTk.PhotoImage(im)
+            self.delete('all')
+            self.create_image(0, 0, image=self._photo, anchor='nw')
+            self.create_rectangle(10, 10, min(w - 10, 240), 38, fill='#101820', outline='#4d79ff')
+            self.create_text(22, 24, text=label, fill='#ffffff',
+                             font=('Yu Gothic UI', 9, 'bold'), anchor='w')
+        except Exception:
+            self._draw_loading(w, h)
 
     def _render(self):
         self._after_id = None
@@ -724,9 +782,11 @@ class DashboardApp:
         self._gpu_payload_cache_token = None
         self._gpu_payload_cache = None
         self._gpu_payload_building = False
+        self._gpu_payload_build_generation = None
         self._gpu_warmup_after_id = None
         self._gpu_open_when_ready = False
         self._focus_surface_building = False
+        self._load_generation = 0
         self._regid2file = {}
         self.active_filter = 'all'
         self.preview_tab = 'overview'
@@ -752,6 +812,38 @@ class DashboardApp:
             icons.minecraft_assets_label(),
             tuple(sorted((str(k), str(v)) for k, v in self.overrides.items())),
         )
+
+    def _dispose_preview_view(self):
+        if hasattr(self, 'preview_view'):
+            try:
+                self.preview_view.close_gpu(wait=False)
+                self.preview_view._gpu_token = None
+                self.preview_view._last_render_key = None
+                self.preview_view._last_render_image = None
+            except Exception:
+                pass
+
+    def _cancel_preview_jobs(self, advance_generation=False):
+        if advance_generation:
+            self._load_generation += 1
+        self._dispose_preview_view()
+        if self._gpu_warmup_after_id:
+            try:
+                self.root.after_cancel(self._gpu_warmup_after_id)
+            except tk.TclError:
+                pass
+            self._gpu_warmup_after_id = None
+        self.image_cache = {}
+        self._preview_source_cache = {}
+        self._target_map_cache_token = None
+        self._target_map_cache = {}
+        self._gpu_payload_cache_token = None
+        self._gpu_payload_cache = None
+        self._gpu_payload_building = False
+        self._gpu_payload_build_generation = None
+        self._gpu_open_when_ready = False
+        self._focus_surface_building = False
+        self._wheel_target = None
 
     def get_icon(self, bid, size=34):
         key = (bd.strip_ns(bid), size)
@@ -1062,7 +1154,8 @@ class DashboardApp:
             return True
         try:
             token = self._preview_cache_token()
-            if not (self._gpu_payload_cache_token == token and self._gpu_payload_cache is not None):
+            cache_token = token + (GPU_PREVIEW_BLOCK_LIMIT, GPU_PREVIEW_FACE_LIMIT)
+            if not (self._gpu_payload_cache_token == cache_token and self._gpu_payload_cache is not None):
                 self._gpu_open_when_ready = True
                 self._sync_progress(text='進行状況: 全画面プレビューを準備中です...')
                 self._schedule_gpu_preview_warmup(open_when_ready=True)
@@ -1217,6 +1310,7 @@ class DashboardApp:
         self._button(row, '自動マッピングを実行', self.apply_default_preset, bg=UI['BTN_BG_2']).pack(side='left')
 
     def clear_loaded_file(self):
+        self._cancel_preview_jobs(advance_generation=True)
         self.src_path = None
         self.loaded_nbt = None
         self.convs = []
@@ -1933,11 +2027,16 @@ class DashboardApp:
     # ---------------------------------------------------------------- refresh
     def _refresh_layout(self):
         self.image_cache = {}
+        self._wheel_target = None
+        self._dispose_preview_view()
         for w in self.main.winfo_children():
             w.destroy()
         self._build_main()
+        try:
+            self.root.update_idletasks()
+        except tk.TclError:
+            pass
         self._sync_progress()
-        self._queue_gpu_preview_warmup()
 
     def _sync_progress(self, value=None, text=None):
         if value is not None:
@@ -1978,6 +2077,7 @@ class DashboardApp:
             self.load_file(paths[0])
 
     def load_file(self, path):
+        self._cancel_preview_jobs(advance_generation=True)
         if not os.path.isfile(path):
             messagebox.showerror(APP_TITLE, 'ファイルが見つかりません:\n%s' % path)
             return
@@ -2007,6 +2107,7 @@ class DashboardApp:
         self._apply_dataversion(nbt)
         self._sync_progress(52, '進行状況: ブロックパレットを解析中...')
         self._rescan()
+        self.root.after(220, self._kick_preview_start)
         self._sync_progress(66, '進行状況: ルール設定中...')
         self.save_state.configure(text='● 未保存の変更があります', fg=UI['ORANGE'])
 
@@ -2320,8 +2421,28 @@ class DashboardApp:
             self.preview_view.refresh(immediate=True)
         if hasattr(self, 'preview_body'):
             self._build_preview_body()
-        self._schedule_gpu_preview_warmup()
-        self._queue_gpu_preview_warmup()
+        self.root.after(180, lambda: self._kick_preview_start(24))
+
+    def _kick_preview_start(self, retries=24):
+        if self.loaded_nbt is None or not hasattr(self, 'preview_view'):
+            return
+        try:
+            self.preview_view.refresh(immediate=True)
+            handle = self.preview_view._gpu_handle
+            starting = self.preview_view._gpu_starting
+            width = self.preview_view.winfo_width()
+            height = self.preview_view.winfo_height()
+        except Exception:
+            return
+        if retries > 0 and (width < 320 or height < 220):
+            try:
+                self.root.update_idletasks()
+            except tk.TclError:
+                pass
+            self.root.after(500, lambda r=retries - 1: self._kick_preview_start(r))
+            return
+        if retries > 0 and handle is None and not starting:
+            self.root.after(500, lambda r=retries - 1: self._kick_preview_start(r))
 
     # ---------------------------------------------------------------- preview
     def _build_preview_body(self):
@@ -2520,15 +2641,9 @@ class DashboardApp:
         self._gpu_payload_cache_token = None
         self._gpu_payload_cache = None
         self._gpu_payload_building = False
+        self._gpu_payload_build_generation = None
         self._gpu_open_when_ready = False
-        if hasattr(self, 'preview_view'):
-            try:
-                self.preview_view.close_gpu(wait=False)
-                self.preview_view._gpu_token = None
-                self.preview_view._last_render_key = None
-                self.preview_view._last_render_image = None
-            except Exception:
-                pass
+        self._dispose_preview_view()
         if hasattr(self, 'save_state'):
             self.save_state.configure(text='● 未保存の変更があります', fg=UI['ORANGE'])
 
@@ -3000,12 +3115,17 @@ class DashboardApp:
         self._sync_progress(text='進行状況: 高密度プレビュー準備完了')
 
     def _schedule_gpu_preview_warmup(self, open_when_ready=False):
+        current_generation = self._load_generation
+        if self._gpu_payload_building and self._gpu_payload_build_generation != current_generation:
+            self._gpu_payload_building = False
+            self._gpu_payload_build_generation = None
         if self.loaded_nbt is None or self._gpu_payload_building:
             if open_when_ready:
                 self._gpu_open_when_ready = True
             return
         token = self._preview_cache_token()
-        if self._gpu_payload_cache_token == token and self._gpu_payload_cache is not None:
+        cache_token = token + (GPU_PREVIEW_BLOCK_LIMIT, GPU_PREVIEW_FACE_LIMIT)
+        if self._gpu_payload_cache_token == cache_token and self._gpu_payload_cache is not None:
             if open_when_ready:
                 self._gpu_open_when_ready = False
                 self._safe_after(self._open_ready_gpu_payload)
@@ -3013,10 +3133,14 @@ class DashboardApp:
         if open_when_ready:
             self._gpu_open_when_ready = True
         self._gpu_payload_building = True
+        self._gpu_payload_build_generation = current_generation
 
-        def worker(expected_token):
+        def worker(expected_token, expected_generation):
             error = None
+            ok = False
             try:
+                if self._load_generation != expected_generation or self.loaded_nbt is None:
+                    return
                 payload = self._gpu_preview_payload()
                 if payload.get('blocks') and 'prebuilt_mesh' not in payload:
                     try:
@@ -3024,18 +3148,24 @@ class DashboardApp:
                         payload['prebuilt_mesh'] = gpu_preview.build_mesh(payload)
                     except Exception:
                         pass
-                ok = bool(payload.get('blocks')) and self._preview_cache_token() == expected_token
+                ok = (bool(payload.get('blocks'))
+                      and self._load_generation == expected_generation
+                      and self._preview_cache_token() == expected_token)
             except Exception as exc:
                 error = exc
-                ok = False
             finally:
-                self._gpu_payload_building = False
-            if self.loaded_nbt is not None:
-                self._safe_after(lambda ok=ok, error=error: self._finish_gpu_preview_warmup(ok, error))
+                if (self._load_generation == expected_generation
+                        and self._gpu_payload_build_generation == expected_generation):
+                    self._gpu_payload_building = False
+                    self._gpu_payload_build_generation = None
+            if self.loaded_nbt is not None and self._load_generation == expected_generation:
+                self._safe_after(lambda ok=ok, error=error, gen=expected_generation: self._finish_gpu_preview_warmup(ok, error, gen))
 
-        threading.Thread(target=worker, args=(token,), daemon=True).start()
+        threading.Thread(target=worker, args=(token, current_generation), daemon=True).start()
 
-    def _finish_gpu_preview_warmup(self, ok, error=None):
+    def _finish_gpu_preview_warmup(self, ok, error=None, generation=None):
+        if generation is not None and generation != self._load_generation:
+            return
         want_open = self._gpu_open_when_ready
         if ok:
             self._sync_progress(text='進行状況: 全画面プレビュー準備完了')
@@ -3051,11 +3181,13 @@ class DashboardApp:
         if want_open:
             messagebox.showwarning(APP_TITLE, '全画面プレビューの準備に失敗しました。\n\n%s' % (error or 'unknown error'))
 
-    def _gpu_preview_payload(self):
-        token = self._preview_cache_token()
+    def _gpu_preview_payload(self, max_blocks=GPU_PREVIEW_BLOCK_LIMIT, max_faces=GPU_PREVIEW_FACE_LIMIT):
+        max_blocks = max(1, int(max_blocks or GPU_PREVIEW_BLOCK_LIMIT))
+        max_faces = max(1, int(max_faces or GPU_PREVIEW_FACE_LIMIT))
+        token = self._preview_cache_token() + (max_blocks, max_faces)
         if self._gpu_payload_cache_token == token and self._gpu_payload_cache is not None:
             return self._gpu_payload_cache
-        records = self._focused_render_records(max_blocks=GPU_PREVIEW_BLOCK_LIMIT)
+        records = self._focused_render_records(max_blocks=max_blocks)
         occupied = set((int(self._preview_rec_parts(rec)[0]),
                         int(self._preview_rec_parts(rec)[1]),
                         int(self._preview_rec_parts(rec)[2])) for rec in records)
@@ -3079,7 +3211,7 @@ class DashboardApp:
             'bounds': bounds,
             'atlas': atlas,
             'atlas_uvs': atlas['uvs'],
-            'max_faces': GPU_PREVIEW_FACE_LIMIT,
+            'max_faces': max_faces,
             'width': 1280,
             'height': 760,
             'startup_timeout': 0.05,

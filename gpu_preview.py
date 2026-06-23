@@ -155,6 +155,7 @@ def open_embedded_preview_async(payload, parent_hwnd, width, height):
         'force_continuous_redraw': True,
         'target_fps': 240,
         'uncapped_fps': False,
+        'async_mesh': True,
     })
     thread = threading.Thread(target=_run_embedded_preview_safe,
                               args=(embedded_payload, status_q),
@@ -219,6 +220,11 @@ def _run_preview(payload, status_q=None):
     pyglet.options['debug_gl'] = False
     pyglet.options['vsync'] = False
     from pyglet import gl
+    if sys.platform.startswith('win'):
+        try:
+            pyglet.app.platform_event_loop._event_thread = ctypes.windll.kernel32.GetCurrentThreadId()
+        except Exception:
+            pass
 
     try:
         config = gl.Config(double_buffer=True, depth_size=24, major_version=3, minor_version=3)
@@ -508,6 +514,9 @@ class GpuPreviewWindow:
         self.command_queue = payload.get('command_queue')
         self._parent_hwnd = int(payload.get('parent_hwnd') or 0)
         self._embedded_hwnd = 0
+        self._mesh_result_q = queue.Queue(maxsize=1)
+        self._mesh_building = False
+        self._mesh_error = None
 
         width = int(payload.get('width') or 1280)
         height = int(payload.get('height') or 760)
@@ -680,16 +689,30 @@ class GpuPreviewWindow:
     def _build_vertex_lists(self):
         from pyglet import gl
 
+        self.mesh_list = None
         prebuilt = self.payload.get('prebuilt_mesh')
         if prebuilt and len(prebuilt) == 7:
-            positions, colors, tex_coords, indices, face_total, emitted_faces, stride = prebuilt
+            self._upload_mesh(prebuilt)
+        elif self.payload.get('async_mesh'):
+            self._start_mesh_worker()
         else:
-            positions, colors, tex_coords, indices, face_total, emitted_faces, stride = build_mesh(self.payload)
+            self._upload_mesh(build_mesh(self.payload))
+        self._build_ground_lists()
+
+    def _upload_mesh(self, mesh):
+        from pyglet import gl
+
+        positions, colors, tex_coords, indices, face_total, emitted_faces, stride = mesh
         self.face_total = face_total
         self.face_emitted = emitted_faces
         self.stride = stride
         self.vertex_count = len(positions) // 3
         self.index_count = len(indices)
+        if self.mesh_list is not None:
+            try:
+                self.mesh_list.delete()
+            except Exception:
+                pass
         self.mesh_list = self.program.vertex_list_indexed(
             self.vertex_count, gl.GL_TRIANGLES,
             indices,
@@ -697,7 +720,41 @@ class GpuPreviewWindow:
             colors=('Bn', colors),
             tex_coords=('f', tex_coords),
         ) if self.vertex_count and self.index_count else None
+        self._mesh_building = False
+        self._mesh_error = None
+        self._overlay_dirty = True
 
+    def _start_mesh_worker(self):
+        if self._mesh_building:
+            return
+        self._mesh_building = True
+
+        def worker():
+            try:
+                mesh = build_mesh(self.payload)
+                self._mesh_result_q.put_nowait(('ok', mesh))
+            except Exception:
+                try:
+                    self._mesh_result_q.put_nowait(('error', traceback.format_exc()))
+                except Exception:
+                    pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _consume_mesh_result(self):
+        try:
+            status, detail = self._mesh_result_q.get_nowait()
+        except queue.Empty:
+            return
+        if status == 'ok':
+            self._upload_mesh(detail)
+            return
+        self._mesh_building = False
+        self._mesh_error = detail
+        self._overlay_dirty = True
+
+    def _build_ground_lists(self):
+        gl = self.gl
         gp, gc, gt, gridp, gridc, gridt = build_ground(self.bounds)
         self.ground_list = self.program.vertex_list(
             len(gp) // 3, gl.GL_TRIANGLES,
@@ -808,6 +865,7 @@ class GpuPreviewWindow:
         self._drain_commands()
         if self._closed:
             return
+        self._consume_mesh_result()
         self._fps_frames += 1
         self._fps_time += dt
         if self._fps_time >= 0.35:
