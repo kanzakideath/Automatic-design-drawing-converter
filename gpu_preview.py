@@ -93,6 +93,9 @@ class EmbeddedPreviewHandle:
     def set_view(self, yaw, pitch, zoom, mode='orbit'):
         self._put('set_view', float(yaw), float(pitch), float(zoom), str(mode or 'orbit'))
 
+    def raise_window(self):
+        self._put('raise')
+
     def close(self, wait=False):
         if self._closed:
             if wait and self._thread is not threading.current_thread():
@@ -601,17 +604,28 @@ class GpuPreviewWindow:
         user32.SetParent(hwnd, self._parent_hwnd)
         self._set_child_window_bounds(width, height, frame_changed=True)
 
-    def _set_child_window_bounds(self, width, height, frame_changed=False):
+    def _set_child_window_bounds(self, width, height, frame_changed=False, to_front=True):
         if not self.embedded or not self._embedded_hwnd or not sys.platform.startswith('win'):
             return
         user32 = ctypes.windll.user32
         SWP_NOZORDER = 0x0004
         SWP_SHOWWINDOW = 0x0040
         SWP_FRAMECHANGED = 0x0020
-        flags = SWP_NOZORDER | SWP_SHOWWINDOW
+        SW_SHOW = 5
+        flags = SWP_SHOWWINDOW
+        if not to_front:
+            flags |= SWP_NOZORDER
         if frame_changed:
             flags |= SWP_FRAMECHANGED
+        try:
+            user32.ShowWindow(self._embedded_hwnd, SW_SHOW)
+        except Exception:
+            pass
         user32.SetWindowPos(self._embedded_hwnd, 0, 0, 0, max(1, int(width)), max(1, int(height)), flags)
+        try:
+            user32.UpdateWindow(self._embedded_hwnd)
+        except Exception:
+            pass
 
     def _drain_commands(self):
         if self.command_queue is None:
@@ -627,6 +641,9 @@ class GpuPreviewWindow:
             if name == 'close':
                 self.close()
                 return
+            if name == 'raise':
+                self._set_child_window_bounds(self.window.width, self.window.height, to_front=True)
+                continue
             if name == 'resize' and len(cmd) >= 3:
                 width = max(240, int(cmd[1]))
                 height = max(160, int(cmd[2]))
@@ -634,7 +651,7 @@ class GpuPreviewWindow:
                     self.window.set_size(width, height)
                 except Exception:
                     pass
-                self._set_child_window_bounds(width, height)
+                self._set_child_window_bounds(width, height, to_front=True)
                 self._overlay_dirty = True
             elif name == 'set_view' and len(cmd) >= 5:
                 self.yaw = float(cmd[1])

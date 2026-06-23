@@ -243,6 +243,7 @@ class InteractivePreview(tk.Canvas):
         self._gpu_token = None
         self._gpu_starting = False
         self._gpu_error = None
+        self._gpu_recover_after_id = None
         self.bind('<Configure>', lambda _e: self.refresh())
         self.bind('<Enter>', self._on_enter)
         self.bind('<ButtonPress-1>', lambda e: self._on_press(e, 'rotate'))
@@ -268,6 +269,12 @@ class InteractivePreview(tk.Canvas):
             pass
 
     def close_gpu(self, wait=False):
+        if self._gpu_recover_after_id:
+            try:
+                self.after_cancel(self._gpu_recover_after_id)
+            except tk.TclError:
+                pass
+            self._gpu_recover_after_id = None
         handle = self._gpu_handle
         self._gpu_handle = None
         self._gpu_starting = False
@@ -409,17 +416,22 @@ class InteractivePreview(tk.Canvas):
     def _render_gpu(self, w, h):
         if self.app.loaded_nbt is None:
             self.close_gpu(wait=False)
-            self._draw_loading(w, h)
+            self._draw_waiting(w, h)
             return True
         if preview_geom is None:
             self.close_gpu(wait=False)
             self._draw_error(w, h, 'gpu_preview module is not available')
             return True
         try:
+            if not self.winfo_ismapped() or w < 320 or h < 220:
+                self._draw_loading(w, h)
+                self.after(160, lambda: self.refresh(immediate=True))
+                return True
             token = self.app._preview_cache_token()
             if self._gpu_handle is not None and self._gpu_token == token and self._gpu_handle.alive:
                 self._gpu_handle.resize(w, h)
                 self._send_gpu_view()
+                self._raise_gpu_view()
                 return True
             if self._gpu_starting and self._gpu_token == token:
                 self._draw_loading(w, h)
@@ -491,10 +503,10 @@ class InteractivePreview(tk.Canvas):
             import gpu_preview
             self._gpu_handle = gpu_preview.open_embedded_preview_async(payload, parent_hwnd, width, height)
             self._gpu_token = expected_token
-            self.delete('all')
             self._send_gpu_view()
             self._sync_gpu_size()
-            self.after(120, self._sync_gpu_size)
+            self._raise_gpu_view()
+            self._schedule_gpu_recover()
         except Exception as exc:
             self._gpu_error = exc
             self._draw_error(width, height, exc)
@@ -513,6 +525,14 @@ class InteractivePreview(tk.Canvas):
         except Exception:
             pass
 
+    def _raise_gpu_view(self):
+        if self._gpu_handle is None:
+            return
+        try:
+            self._gpu_handle.raise_window()
+        except Exception:
+            pass
+
     def _sync_gpu_size(self):
         if self._gpu_handle is None:
             return
@@ -520,6 +540,21 @@ class InteractivePreview(tk.Canvas):
             self._gpu_handle.resize(max(260, self.winfo_width()), max(150, self.winfo_height()))
         except Exception:
             pass
+
+    def _schedule_gpu_recover(self, delay=120, attempts=6):
+        if self._gpu_recover_after_id:
+            try:
+                self.after_cancel(self._gpu_recover_after_id)
+            except tk.TclError:
+                pass
+        def recover():
+            self._gpu_recover_after_id = None
+            self._sync_gpu_size()
+            self._send_gpu_view()
+            self._raise_gpu_view()
+            if self._gpu_handle is not None and attempts > 1:
+                self._gpu_recover_after_id = self.after(450, lambda: self._schedule_gpu_recover(0, attempts - 1))
+        self._gpu_recover_after_id = self.after(delay, recover)
 
     def _draw_error(self, w, h, exc):
         self.delete('all')
@@ -576,6 +611,14 @@ class InteractivePreview(tk.Canvas):
             self.create_rectangle(0, 0, w, h, fill='#101820', outline='#4d79ff')
             self.create_text(w / 2, h / 2, text='プレビュー生成中に失敗しました\n%s' % exc,
                              fill='#ffffff', font=('Yu Gothic UI', 9), justify='center')
+
+    def _draw_waiting(self, w, h):
+        self.delete('all')
+        self.create_rectangle(0, 0, w, h, fill='#101820', outline='#4d79ff')
+        self.create_text(w / 2, h / 2 - 14, text='設計図待機中', fill='#ffffff',
+                         font=('Yu Gothic UI', 16, 'bold'))
+        self.create_text(w / 2, h / 2 + 18, text='.litematic を読み込むとここにプレビューを表示します',
+                         fill='#b8c7d8', font=('Yu Gothic UI', 10))
 
     def _draw_loading(self, w, h):
         self.delete('all')
@@ -1947,7 +1990,7 @@ class DashboardApp:
         self._gpu_payload_cache = None
         self._gpu_open_when_ready = False
         self._focus_surface_building = False
-        self.focus_mode = True
+        self.focus_mode = False
         for widget in self.header.winfo_children():
             widget.destroy()
         self._build_header()
