@@ -63,17 +63,18 @@ CATEGORY_BY_LABEL = {label: key for key, label in CATEGORY_LABELS}
 CATEGORY_NAME = {key: label for key, label in CATEGORY_LABELS}
 
 UI = {
-    'BG': '#f2f2f7', 'SIDEBAR': '#ffffff', 'HEADER': '#ffffff',
-    'PANEL': '#ffffff', 'PANEL_2': '#f7f7fb', 'PANEL_3': '#e5e5ea',
-    'ROW': '#ffffff', 'ROW_ALT': '#f7f7fb', 'BORDER': '#d1d1d6',
-    'BORDER_HI': '#007aff', 'TEXT': '#1c1c1e', 'TEXT_SOFT': '#3a3a3c',
-    'MUTED': '#8e8e93', 'MUTED_2': '#aeaeb2', 'ACCENT': '#007aff',
-    'ACCENT_2': '#5ac8fa', 'ACCENT_3': '#5856d6', 'ACCENT_DK': '#0062cc',
-    'CYAN': '#5ac8fa', 'GREEN': '#34c759', 'ORANGE': '#ff9500',
-    'RED': '#ff3b30', 'BTN_BG': '#e9e9ef', 'BTN_BG_2': '#ffffff',
-    'KEEP_BG': '#f2f2f7', 'TARGET_BG': '#e8f5ee', 'REC_BG': '#eef2ff',
-    'HOVER': '#dcecff', 'CARD': '#ffffff', 'BADGE_BG': '#e9eefc',
-    'BADGE_FG': '#0b5ed7', 'NBADGE_BG': '#f2f2f7', 'NBADGE_FG': '#3a3a3c',
+    'BG': '#070b12', 'SIDEBAR': '#0b111b', 'HEADER': '#0b111b',
+    'PANEL': '#101823', 'PANEL_2': '#151f2c', 'PANEL_3': '#1d2a3a',
+    'ROW': '#101823', 'ROW_ALT': '#131d29', 'BORDER': '#263447',
+    'BORDER_HI': '#3da2ff', 'TEXT': '#ecf3fb', 'TEXT_SOFT': '#c8d3df',
+    'MUTED': '#8696a8', 'MUTED_2': '#617083', 'ACCENT': '#2f8cff',
+    'ACCENT_2': '#44d7ff', 'ACCENT_3': '#7c5cff', 'ACCENT_DK': '#1467d8',
+    'CYAN': '#44d7ff', 'GREEN': '#36d182', 'ORANGE': '#ffb34d',
+    'RED': '#ff5c6c', 'BTN_BG': '#1a2635', 'BTN_BG_2': '#202d3d',
+    'KEEP_BG': '#16202c', 'TARGET_BG': '#123021', 'REC_BG': '#172542',
+    'HOVER': '#24364a', 'CARD': '#121b27', 'BADGE_BG': '#172b48',
+    'BADGE_FG': '#8bc6ff', 'NBADGE_BG': '#17202d', 'NBADGE_FG': '#b9c7d6',
+    'WARNING_BG': '#2f2512', 'SUCCESS_BG': '#10291d', 'DROP_BG': '#0d1724',
 }
 UI_FONT_BOOST = 2
 
@@ -199,7 +200,7 @@ class RoundedButton(tk.Canvas):
             fill = _mix_hex(fill, '#000000', 0.12)
         if self.state != 'normal':
             fill = _mix_hex(fill, '#6c7484', 0.45)
-        radius = self.radius or max(12, min(22, height // 2))
+        radius = self.radius or max(14, min(24, height // 2))
         img = Image.new('RGBA', (width * scale, height * scale), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
         shadow = (0, 0, 0, 28)
@@ -227,7 +228,7 @@ class InteractivePreview(tk.Canvas):
         self.app = app
         self.yaw = -28.0
         self.pitch = 0.24
-        self.zoom = 4.4
+        self.zoom = 3.2
         self.pan_x = 0.0
         self.pan_y = 0.0
         self.mode = 'orbit'
@@ -314,11 +315,11 @@ class InteractivePreview(tk.Canvas):
             self.pitch = max(-0.12, self.pitch - 0.06)
             self.refresh(immediate=True)
         elif key in ('1', 'num_1'):
-            self.set_view(-28.0, 0.24, 4.4)
+            self.set_view(-28.0, 0.24, 3.2, focus=True)
         elif key in ('2', 'num_2'):
-            self.set_view(-38.0, 0.34, 1.55)
+            self.set_view(-38.0, 0.34, 2.2, focus=True)
         elif key in ('3', 'num_3'):
-            self.set_view(0.0, 0.72, 1.35)
+            self.set_view(0.0, 0.72, 2.0, focus=True)
         return 'break'
 
     def set_zoom(self, value):
@@ -346,15 +347,15 @@ class InteractivePreview(tk.Canvas):
 
     def _toggle_detail_view(self, _event=None):
         if self.zoom < 3.0 or not self.focus_view:
-            self.set_view(-28.0, 0.24, 4.4, focus=True)
+            self.set_view(-28.0, 0.24, 3.2, focus=True)
         else:
-            self.set_view(-38.0, 0.34, 1.55, focus=False)
+            self.set_view(-38.0, 0.34, 2.2, focus=True)
         return 'break'
 
     def reset_view(self):
         self.yaw = -28.0
         self.pitch = 0.24
-        self.zoom = 4.4
+        self.zoom = 3.2
         self.pan_x = 0.0
         self.pan_y = 0.0
         self.mode = 'orbit'
@@ -390,7 +391,7 @@ class InteractivePreview(tk.Canvas):
         h = max(150, self.winfo_height())
         try:
             large = w * h >= 260000
-            render_scale = 0.24 if self._drag else (0.42 if large else 0.56)
+            render_scale = 0.24 if self._drag else (0.72 if large else 0.82)
             rw = max(220, int(w * render_scale))
             rh = max(135, int(h * render_scale))
             if self._drag:
@@ -398,12 +399,9 @@ class InteractivePreview(tk.Canvas):
                 face_limit = CPU_PREVIEW_DRAG_FACE_LIMIT if large else max(48, int(CPU_PREVIEW_DRAG_FACE_LIMIT * 0.85))
                 texture_limit = 0
             else:
-                max_blocks = CPU_PREVIEW_IDLE_BLOCK_LIMIT if large else max(640, int(CPU_PREVIEW_IDLE_BLOCK_LIMIT * 0.72))
-                face_limit = CPU_PREVIEW_IDLE_FACE_LIMIT if large else max(820, int(CPU_PREVIEW_IDLE_FACE_LIMIT * 0.72))
-                texture_limit = min(
-                    face_limit,
-                    CPU_PREVIEW_TEXTURE_FACE_LIMIT if large else max(160, int(CPU_PREVIEW_TEXTURE_FACE_LIMIT * 0.72))
-                )
+                max_blocks = int(CPU_PREVIEW_IDLE_BLOCK_LIMIT * (1.35 if large else 1.0))
+                face_limit = int(CPU_PREVIEW_IDLE_FACE_LIMIT * (1.65 if large else 1.15))
+                texture_limit = face_limit
             state = self.view_state()
             cache_key = None if self._drag else (
                 w, h, rw, rh,
@@ -418,7 +416,7 @@ class InteractivePreview(tk.Canvas):
                                                         view=state, fast=True,
                                                         face_limit_override=face_limit,
                                                         texture_limit=texture_limit,
-                                                        min_face_px=2.4 if not self._drag else 3.2,
+                                                        min_face_px=1.35 if not self._drag else 3.2,
                                                         focus_view=self.focus_view and not self._drag)
                 if (rw, rh) != (w, h):
                     im = im.resize((w, h), Image.Resampling.NEAREST)
@@ -858,19 +856,19 @@ class DashboardApp:
         try:
             import gpu_preview
         except Exception as exc:
-            messagebox.showwarning(APP_TITLE, 'GPUプレビューを起動できませんでした。\n\n%s' % exc)
+            messagebox.showwarning(APP_TITLE, '全画面プレビューを起動できませんでした。\n\n%s' % exc)
             return True
         try:
             token = self._preview_cache_token()
             if not (self._gpu_payload_cache_token == token and self._gpu_payload_cache is not None):
                 self._gpu_open_when_ready = True
-                self._sync_progress(text='進行状況: GPUプレビューをバックグラウンドで準備中です...')
+                self._sync_progress(text='進行状況: 全画面プレビューを準備中です...')
                 self._schedule_gpu_preview_warmup(open_when_ready=True)
                 return True
             self._open_ready_gpu_payload(gpu_preview)
             return True
         except Exception as exc:
-            messagebox.showwarning(APP_TITLE, 'GPUプレビューの準備に失敗しました。\n\n%s' % exc)
+            messagebox.showwarning(APP_TITLE, '全画面プレビューの準備に失敗しました。\n\n%s' % exc)
             return True
 
     def _open_ready_gpu_payload(self, gpu_preview_module=None):
@@ -881,7 +879,7 @@ class DashboardApp:
         if gpu_preview_module is None:
             import gpu_preview as gpu_preview_module
         gpu_preview_module.open_preview_async(payload)
-        self._sync_progress(text='進行状況: GPUプレビューを起動しました')
+        self._sync_progress(text='進行状況: 全画面プレビューを起動しました')
         return True
 
     def _open_cpu_full_preview(self):
@@ -1282,19 +1280,19 @@ class DashboardApp:
             steps.grid_columnconfigure(i, weight=1)
         current = 1 if self.loaded_nbt is None else (3 if self.last_output else 2)
         self._step_card(steps, 0, 1, '設計図読み込み', 'ファイルを読み込み、ブロックを解析', current >= 1, current == 1)
-        self._step_card(steps, 1, 2, 'プレビューで確認', '変換後の見た目を大きい画面で確認', current >= 2, current == 2)
+        self._step_card(steps, 1, 2, 'プレビュー確認', '変換後の見た目を全画面でも確認', current >= 2, current == 2)
         self._step_card(steps, 2, 3, '出力・適用', '結果を出力してプロジェクトに適用', current >= 3, current == 3)
 
     def _step_card(self, parent, col, no, title, desc, done, active):
-        bg = '#e8f2ff' if active else ('#f0f9ff' if done else UI['PANEL'])
-        border = UI['ACCENT'] if active else ('#b8d8ff' if done else UI['BORDER'])
+        bg = '#162b46' if active else ('#132235' if done else UI['PANEL'])
+        border = UI['ACCENT'] if active else ('#254b72' if done else UI['BORDER'])
         f = self._panel(parent, bg=bg, border=border)
         f.configure(cursor='hand2')
         f.grid(row=0, column=col, sticky='ew', padx=(0 if col == 0 else 10, 0), ipady=8)
         f.grid_columnconfigure(1, weight=1)
         circle = tk.Canvas(f, width=42, height=42, bg=bg, highlightthickness=0)
         circle.grid(row=0, column=0, rowspan=2, padx=14)
-        fill = UI['ACCENT'] if active else (UI['ACCENT_2'] if done else '#d1d1d6')
+        fill = UI['ACCENT'] if active else (UI['ACCENT_2'] if done else UI['PANEL_3'])
         circle.create_oval(4, 4, 38, 38, fill=fill, outline='')
         circle.create_text(21, 21, text=str(no), fill='white', font=('Segoe UI', 12, 'bold'))
         self._label(f, title, size=10, weight='bold', bg=bg).grid(row=0, column=1, sticky='sw')
@@ -1319,14 +1317,14 @@ class DashboardApp:
                     size=7, fg=UI['MUTED'], wraplength=238, justify='left').pack(anchor='w', pady=(2, 0))
 
         if self.loaded_nbt is None:
-            drop = tk.Frame(panel, bg='#f7fbff', highlightthickness=1, highlightbackground=UI['BORDER_HI'])
+            drop = tk.Frame(panel, bg=UI['DROP_BG'], highlightthickness=1, highlightbackground=UI['BORDER_HI'])
             drop.pack(fill='x', padx=12, pady=(4, 12), ipady=34)
             self._register_drop(drop)
             drop.bind('<Button-1>', lambda _e: self.choose_file())
             self._label(drop, '設計図を読み込む', size=13, weight='bold', fg=UI['TEXT_SOFT'],
-                        bg='#f7fbff').pack(pady=(4, 2))
+                        bg=UI['DROP_BG']).pack(pady=(4, 2))
             self._label(drop, self._default_drop_text(), size=8, fg=UI['MUTED'],
-                        bg='#f7fbff', justify='center').pack()
+                        bg=UI['DROP_BG'], justify='center').pack()
             return
 
         hero = tk.Frame(panel, bg=UI['PANEL'])
@@ -1352,7 +1350,7 @@ class DashboardApp:
 
         action = tk.Frame(panel, bg=UI['PANEL'])
         action.pack(fill='x', padx=12, pady=(0, 10))
-        self._button(action, '大きいGPUプレビュー', self.open_full_preview,
+        self._button(action, '全画面表示', self.open_full_preview,
                      bg=UI['ACCENT'], fg='white', size=10, pady=8).pack(fill='x', pady=(0, 6))
         self._button(action, '素材を編集', self.toggle_focus_mode,
                      bg=UI['BTN_BG_2'], size=9, pady=7).pack(fill='x', pady=(0, 6))
@@ -1388,14 +1386,14 @@ class DashboardApp:
         body.pack(fill='x', padx=12, pady=(0, 12))
 
         if self.loaded_nbt is None:
-            drop = tk.Frame(body, bg='#f7fbff', highlightthickness=1, highlightbackground=UI['BORDER_HI'])
+            drop = tk.Frame(body, bg=UI['DROP_BG'], highlightthickness=1, highlightbackground=UI['BORDER_HI'])
             drop.pack(fill='x', ipady=28)
             self._register_drop(drop)
             drop.bind('<Button-1>', lambda _e: self.choose_file())
             self._label(drop, '設計図を読み込む', size=13, weight='bold', fg=UI['TEXT_SOFT'],
-                        bg='#f7fbff').pack(pady=(4, 2))
+                        bg=UI['DROP_BG']).pack(pady=(4, 2))
             self._label(drop, self._default_drop_text(), size=8, fg=UI['MUTED'],
-                        bg='#f7fbff', justify='center').pack()
+                        bg=UI['DROP_BG'], justify='center').pack()
         else:
             row = tk.Frame(body, bg=UI['PANEL'])
             row.pack(fill='x')
@@ -1551,19 +1549,19 @@ class DashboardApp:
         controls.grid(row=2, column=0, sticky='ew', padx=12, pady=(0, 8))
         self._button(controls, '近景', self._reset_preview_view,
                      bg=UI['BTN_BG_2'], size=8, padx=12, pady=5).pack(side='left', padx=(0, 6))
-        self._button(controls, '全体', lambda: self._preview_set_view(-38.0, 0.34, 1.55, False),
+        self._button(controls, '全体', lambda: self._preview_set_view(-38.0, 0.34, 2.2, True),
                      bg=UI['BTN_BG_2'], size=8, padx=12, pady=5).pack(side='left', padx=(0, 6))
         self._button(controls, 'リセット', self._reset_preview_view,
                      bg=UI['BTN_BG'], size=8, padx=12, pady=5).pack(side='left')
-        self._button(controls, '大きく表示', self.open_full_preview,
+        self._button(controls, '全画面表示', self.open_full_preview,
                      bg=UI['ACCENT'], size=8, padx=12, pady=5).pack(side='right')
 
         viewbar = tk.Frame(panel, bg=UI['PANEL'])
         viewbar.grid(row=3, column=0, sticky='ew', padx=12, pady=(0, 8))
         for label, args in [
-            ('近景', (-28.0, 0.24, 4.4, True)),
-            ('俯瞰', (-38.0, 0.34, 1.55, False)),
-            ('上から', (0.0, 0.72, 1.35, False)),
+            ('近景', (-28.0, 0.24, 3.2, True)),
+            ('俯瞰', (-38.0, 0.34, 2.2, True)),
+            ('上から', (0.0, 0.72, 2.0, True)),
             ('横', (-90.0, 0.20, 2.8, True)),
         ]:
             self._button(viewbar, label, lambda a=args: self._preview_set_view(*a),
@@ -1618,12 +1616,12 @@ class DashboardApp:
         title_box.grid(row=0, column=0, sticky='w')
         self._label(title_box, '実ブロックプレビュー', size=14, weight='bold',
                     bg=UI['PANEL']).pack(anchor='w')
-        self._label(title_box, 'Minecraftの実テクスチャで近景表示。細部確認はGPUプレビューで開きます。',
+        self._label(title_box, 'Minecraftの実テクスチャで高速表示。全画面で詳細を確認できます。',
                     size=8, fg=UI['MUTED'], bg=UI['PANEL']).pack(anchor='w', pady=(2, 0))
 
         head_actions = tk.Frame(head, bg=UI['PANEL'])
         head_actions.grid(row=0, column=1, sticky='e')
-        self._button(head_actions, 'GPUで大きく見る', self.open_full_preview,
+        self._button(head_actions, '全画面表示', self.open_full_preview,
                      bg=UI['ACCENT'], fg='white', size=9, padx=14, pady=7).pack(side='left', padx=(0, 8))
         self._button(head_actions, '素材編集', self.toggle_focus_mode,
                      bg=UI['BTN_BG_2'], size=9, padx=12, pady=7).pack(side='left', padx=(0, 8))
@@ -1640,9 +1638,9 @@ class DashboardApp:
         controls = tk.Frame(panel, bg=UI['PANEL'])
         controls.grid(row=2, column=0, sticky='ew', padx=16, pady=(0, 8))
         for label, args in [
-            ('近景', (-28.0, 0.24, 4.4, True)),
-            ('全体', (-38.0, 0.34, 1.55, False)),
-            ('上から', (0.0, 0.72, 1.35, False)),
+            ('近景', (-28.0, 0.24, 3.2, True)),
+            ('全体', (-38.0, 0.34, 2.2, True)),
+            ('上から', (0.0, 0.72, 2.0, True)),
             ('横から', (-90.0, 0.20, 2.8, True)),
         ]:
             self._button(controls, label, lambda a=args: self._preview_set_view(*a),
@@ -2043,9 +2041,9 @@ class DashboardApp:
 
     def _status_badge(self, parent, _conv, target):
         if target == KEEP:
-            text, fg, bg = '未設定', UI['ORANGE'], '#fff4df'
+            text, fg, bg = '未設定', UI['ORANGE'], UI['WARNING_BG']
         else:
-            text, fg, bg = '適用', UI['GREEN'], '#e8f7ec'
+            text, fg, bg = '適用', UI['GREEN'], UI['SUCCESS_BG']
         return tk.Label(parent, text=text, bg=bg, fg=fg, width=6,
                         font=('Yu Gothic UI', 8, 'bold'), padx=3, pady=3)
 
@@ -2156,19 +2154,19 @@ class DashboardApp:
         ]:
             self._metric_line(self.preview_body, label, str(value))
 
-        warn = tk.Frame(self.preview_body, bg='#fff8e8', highlightthickness=1, highlightbackground='#ffd58a')
+        warn = tk.Frame(self.preview_body, bg=UI['WARNING_BG'], highlightthickness=1, highlightbackground=UI['ORANGE'])
         warn.pack(fill='x', pady=(10, 0))
-        self._label(warn, '検証結果', size=9, weight='bold', bg='#fff8e8').pack(anchor='w', padx=10, pady=(8, 2))
+        self._label(warn, '検証結果', size=9, weight='bold', bg=UI['WARNING_BG']).pack(anchor='w', padx=10, pady=(8, 2))
         self._validation_line(warn, '競合するルール', stats['conflicts'], '詳細')
         self._validation_line(warn, '未設定のブロック', stats['unset'], '確認')
         self._validation_line(warn, '非対応ブロック', 0, '✓')
 
     def _stat_box(self, parent, title, value, delta):
-        f = tk.Frame(parent, bg='#f7f7fb', highlightthickness=1, highlightbackground=UI['BORDER'])
+        f = tk.Frame(parent, bg=UI['PANEL_2'], highlightthickness=1, highlightbackground=UI['BORDER'])
         f.pack(side='left', fill='x', expand=True, padx=(0, 8), pady=(0, 8))
-        self._label(f, title, size=7, fg=UI['MUTED'], bg='#f7f7fb').pack(anchor='w', padx=8, pady=(7, 0))
-        self._label(f, str(value), size=14, weight='bold', bg='#f7f7fb').pack(anchor='w', padx=8)
-        self._label(f, delta, size=7, fg=UI['GREEN'], bg='#f7f7fb').pack(anchor='e', padx=8, pady=(0, 6))
+        self._label(f, title, size=7, fg=UI['MUTED'], bg=UI['PANEL_2']).pack(anchor='w', padx=8, pady=(7, 0))
+        self._label(f, str(value), size=14, weight='bold', bg=UI['PANEL_2']).pack(anchor='w', padx=8)
+        self._label(f, delta, size=7, fg=UI['GREEN'], bg=UI['PANEL_2']).pack(anchor='e', padx=8, pady=(0, 6))
 
     def _metric_line(self, parent, label, value):
         f = tk.Frame(parent, bg=UI['PANEL'])
@@ -2177,11 +2175,11 @@ class DashboardApp:
         self._label(f, value, size=8, fg=UI['TEXT_SOFT'], weight='bold').pack(side='right')
 
     def _validation_line(self, parent, label, count, action):
-        f = tk.Frame(parent, bg='#fff8e8')
+        f = tk.Frame(parent, bg=UI['WARNING_BG'])
         f.pack(fill='x', padx=10, pady=3)
         color = UI['ORANGE'] if count else UI['GREEN']
-        self._label(f, '● ' + label, size=8, fg=color, bg='#fff8e8').pack(side='left')
-        self._label(f, '%s 件' % count, size=8, bg='#fff8e8').pack(side='left', padx=(16, 0))
+        self._label(f, '● ' + label, size=8, fg=color, bg=UI['WARNING_BG']).pack(side='left')
+        self._label(f, '%s 件' % count, size=8, bg=UI['WARNING_BG']).pack(side='left', padx=(16, 0))
         self._button(f, action, lambda l=label, c=count: self.open_validation_dialog(l, c),
                      bg=UI['BTN_BG'], size=7, padx=8, pady=2).pack(side='right')
 
@@ -2751,7 +2749,7 @@ class DashboardApp:
         except tk.TclError:
             pass
         try:
-            self._gpu_warmup_after_id = self.root.after(2800, self._run_queued_gpu_preview_warmup)
+            self._gpu_warmup_after_id = self.root.after(6500, self._run_queued_gpu_preview_warmup)
         except tk.TclError:
             self._gpu_warmup_after_id = None
 
@@ -2828,18 +2826,18 @@ class DashboardApp:
     def _finish_gpu_preview_warmup(self, ok, error=None):
         want_open = self._gpu_open_when_ready
         if ok:
-            self._sync_progress(text='進行状況: GPUプレビュー準備完了')
+            self._sync_progress(text='進行状況: 全画面プレビュー準備完了')
             if want_open:
                 self._gpu_open_when_ready = False
                 try:
                     self._open_ready_gpu_payload()
                 except Exception as exc:
-                    messagebox.showwarning(APP_TITLE, 'GPUプレビューの起動に失敗しました。\n\n%s' % exc)
+                    messagebox.showwarning(APP_TITLE, '全画面プレビューの起動に失敗しました。\n\n%s' % exc)
             return
         self._gpu_open_when_ready = False
-        self._sync_progress(text='進行状況: GPUプレビュー準備に失敗しました')
+        self._sync_progress(text='進行状況: 全画面プレビュー準備に失敗しました')
         if want_open:
-            messagebox.showwarning(APP_TITLE, 'GPUプレビューの準備に失敗しました。\n\n%s' % (error or 'unknown error'))
+            messagebox.showwarning(APP_TITLE, '全画面プレビューの準備に失敗しました。\n\n%s' % (error or 'unknown error'))
 
     def _gpu_preview_payload(self):
         token = self._preview_cache_token()
@@ -2972,9 +2970,10 @@ class DashboardApp:
         key = ('loaded', w, h, self.src_path, icons.minecraft_assets_label())
         if key in self.image_cache:
             return self.image_cache[key]
-        im = self._render_schematic_preview(w, h, max_blocks=720, fast=True,
-                                            face_limit_override=820, texture_limit=220,
-                                            min_face_px=1.8, focus_view=True)
+        view = {'yaw': -28.0, 'pitch': 0.22, 'zoom': 3.6, 'pan_x': 0.0, 'pan_y': 0.0, 'mode': 'orbit'}
+        im = self._render_schematic_preview(w, h, max_blocks=1200, view=view, fast=True,
+                                            face_limit_override=1600, texture_limit=1600,
+                                            min_face_px=0.6, focus_view=True)
         img = ImageTk.PhotoImage(im)
         self.image_cache[key] = img
         return img
@@ -2984,9 +2983,10 @@ class DashboardApp:
                icons.minecraft_assets_label())
         if key in self.image_cache:
             return self.image_cache[key]
-        im = self._render_schematic_preview(w, h, max_blocks=900, fast=True,
-                                            face_limit_override=1050, texture_limit=260,
-                                            min_face_px=1.8, focus_view=True)
+        view = {'yaw': -28.0, 'pitch': 0.22, 'zoom': 3.6, 'pan_x': 0.0, 'pan_y': 0.0, 'mode': 'orbit'}
+        im = self._render_schematic_preview(w, h, max_blocks=1200, view=view, fast=True,
+                                            face_limit_override=1600, texture_limit=1600,
+                                            min_face_px=0.6, focus_view=True)
         img = ImageTk.PhotoImage(im)
         self.image_cache[key] = img
         return img
@@ -3141,9 +3141,9 @@ class DashboardApp:
         view = view or {}
         span = max(bounds['span_x'], bounds['span_z'])
         height = bounds['span_y']
-        zoom = max(0.45, min(7.2, float(view.get('zoom', 1.55) or 1.55)))
-        yaw = math.radians(float(view.get('yaw', -38.0) or 0.0))
-        pitch = max(-0.12, min(0.88, float(view.get('pitch', 0.34) or 0.34)))
+        zoom = max(0.45, min(7.2, float(view.get('zoom', 3.2) or 3.2)))
+        yaw = math.radians(float(view.get('yaw', -28.0) or -28.0))
+        pitch = max(-0.12, min(0.88, float(view.get('pitch', 0.24) or 0.24)))
         mode = view.get('mode', 'orbit')
         if mode == 'walk':
             back = max(4.0, span * 0.95) / zoom

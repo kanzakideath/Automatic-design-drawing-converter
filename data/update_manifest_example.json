@@ -1,7 +1,7 @@
 {
-  "version": "1.4.3",
-  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.4.3/SchematicMaterialConverter.exe",
-  "sha256": "85efbf69b5a615b0e858de7277aa1c15d80fd942e06c5365253914320318ae97",
-  "notes": "Speed up preview interaction and GPU startup. Large previews now use the OpenGL path only, GPU mesh preparation runs in the background, CPU preview sampling is lighter during drag, dense contiguous preview crops are cached, and the GPU window opens centered with an uncapped redraw loop.",
+  "version": "1.4.4",
+  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.4.4/SchematicMaterialConverter.exe",
+  "sha256": "ff69f59235295e5d19198982a3fe37835bf3c118356c98535437902f6b5afecb",
+  "notes": "Dark rounded UI refresh, clearer preview workflow, faster real-texture previews, improved fullscreen preview wording, lighter background preparation, and more Japanese material names.",
   "mandatory": false
 }

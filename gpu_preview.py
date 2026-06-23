@@ -55,7 +55,7 @@ def open_preview_async(payload):
     status_q = queue.Queue(maxsize=1)
     with _active_lock:
         if _active_thread is not None and _active_thread.is_alive():
-            raise RuntimeError('GPUプレビューはすでに開いています。先に閉じてください。')
+            raise RuntimeError('全画面プレビューはすでに開いています。先に閉じてください。')
         _active_thread = threading.Thread(target=_run_preview_safe, args=(payload, status_q), daemon=True)
         _active_thread.start()
     try:
@@ -372,11 +372,11 @@ class GpuPreviewWindow:
         self._overlay_dirty = True
         self.show_overlay = bool(payload.get('show_overlay', False))
         self.force_continuous_redraw = bool(payload.get('force_continuous_redraw', True))
-        self._caption_title = str(payload.get('title') or 'GPU Preview')
+        self._caption_title = str(payload.get('title') or '全画面プレビュー')
 
         width = int(payload.get('width') or 1280)
         height = int(payload.get('height') or 760)
-        kwargs = {'width': width, 'height': height, 'caption': 'Minecraft GPU Preview', 'resizable': True,
+        kwargs = {'width': width, 'height': height, 'caption': 'Minecraft 全画面プレビュー', 'resizable': True,
                   'vsync': False}
         if config is not None:
             kwargs['config'] = config
