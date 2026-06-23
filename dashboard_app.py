@@ -1198,7 +1198,7 @@ class DashboardApp:
                      size=8, padx=10, pady=4).pack(side='left', padx=4)
         self._button(right, '設定', self.open_settings_dialog, bg=UI['BTN_BG'],
                      size=8, padx=10, pady=4).pack(side='left', padx=4)
-        focus_label = '通常表示' if self.focus_mode else 'プレビュースタジオ'
+        focus_label = '素材編集' if self.focus_mode else 'プレビュー画面'
         self._button(right, focus_label, self.toggle_focus_mode, bg=UI['ACCENT'] if self.focus_mode else UI['BTN_BG'],
                      fg='white' if self.focus_mode else UI['TEXT'], size=8,
                      padx=10, pady=4).pack(side='left', padx=4)
@@ -1216,13 +1216,14 @@ class DashboardApp:
 
         if self.focus_mode:
             self.content.grid_columnconfigure(0, minsize=280, weight=0)
-            self.content.grid_columnconfigure(1, minsize=960, weight=1)
+            self.content.grid_columnconfigure(1, minsize=1120, weight=1)
             self.left_col = tk.Frame(self.content, bg=UI['BG'])
             self.left_col.grid(row=0, column=0, sticky='nsew', padx=(0, 14))
             self.center_col = tk.Frame(self.content, bg=UI['BG'])
             self.right_col = tk.Frame(self.content, bg=UI['BG'])
             self.right_col.grid(row=0, column=1, sticky='nsew')
             self.right_col.grid_rowconfigure(0, weight=1)
+            self.right_col.grid_columnconfigure(0, weight=1)
             self._build_left_column()
             self._build_preview_panel()
             return
@@ -1238,6 +1239,7 @@ class DashboardApp:
         self.right_col = tk.Frame(self.content, bg=UI['BG'])
         self.right_col.grid(row=0, column=2, sticky='nsew')
         self.right_col.grid_rowconfigure(0, weight=1)
+        self.right_col.grid_columnconfigure(0, weight=1)
 
         self._build_left_column()
         self._build_mapping_panel()
@@ -1576,6 +1578,10 @@ class DashboardApp:
         self.last_output = None
         self.overrides = {}
         self._preview_source_cache = {}
+        self.focus_mode = True
+        for widget in self.header.winfo_children():
+            widget.destroy()
+        self._build_header()
         self._apply_dataversion(nbt)
         self._sync_progress(52, '進行状況: ブロックパレットを解析中...')
         self._rescan()

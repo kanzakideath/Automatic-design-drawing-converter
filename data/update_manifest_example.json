@@ -1,7 +1,7 @@
 {
-  "version": "1.3.9",
-  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.3.9/SchematicMaterialConverter.exe",
-  "sha256": "28beba12abe1771f8c8d1e5840981902f2c1432bb7730d12cf00f77ded5f105a",
-  "notes": "Make the right preview and PNG export render dense, real textured Minecraft blocks instead of sparse particles. The large GPU preview now opens in a whole-build orbit view and shows simpler mouse controls.",
+  "version": "1.4.0",
+  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.4.0/SchematicMaterialConverter.exe",
+  "sha256": "fac263474982383091f6b40d03b2c41c3c88f50def748eeb6470bf0e5b257e32",
+  "notes": "Make the main workflow preview-first after loading a schematic. The app now opens directly into the large preview screen, uses the full available width, and keeps material editing one click away with a clearer header button.",
   "mandatory": false
 }
