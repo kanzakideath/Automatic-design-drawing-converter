@@ -317,6 +317,92 @@ def _trapdoor_boxes(variant):
     return [(0.0, 0.0, 0.0, t, 1.0, 1.0)]
 
 
+def _fence_gate_boxes(variant):
+    facing = variant & 3
+    opened = bool(variant & 4)
+    in_wall = bool(variant & 8)
+    y_shift = -0.125 if in_wall else 0.0
+    y0 = max(0.0, 0.0 + y_shift)
+    y1 = max(0.72, 1.0 + y_shift)
+    post = 0.1875
+    rail_lo = max(0.18, 0.3125 + y_shift)
+    rail_hi = max(0.38, 0.8125 + y_shift)
+    thick0, thick1 = 0.375, 0.625
+    rail0, rail1 = 0.4375, 0.5625
+
+    if facing in (0, 2):  # north/south: closed gate spans west-east.
+        boxes = [
+            (0.0, y0, thick0, post, y1, thick1),
+            (1.0 - post, y0, thick0, 1.0, y1, thick1),
+        ]
+        if opened:
+            boxes.extend([
+                (post, rail_lo, 0.0, post + 0.125, rail_hi, 0.50),
+                (1.0 - post - 0.125, rail_lo, 0.50, 1.0 - post, rail_hi, 1.0),
+            ])
+        else:
+            boxes.extend([
+                (post, rail_lo, rail0, 1.0 - post, rail_lo + 0.1875, rail1),
+                (post, rail_hi - 0.1875, rail0, 1.0 - post, rail_hi, rail1),
+            ])
+        return boxes
+
+    boxes = [
+        (thick0, y0, 0.0, thick1, y1, post),
+        (thick0, y0, 1.0 - post, thick1, y1, 1.0),
+    ]
+    if opened:
+        boxes.extend([
+            (0.0, rail_lo, post, 0.50, rail_hi, post + 0.125),
+            (0.50, rail_lo, 1.0 - post - 0.125, 1.0, rail_hi, 1.0 - post),
+        ])
+    else:
+        boxes.extend([
+            (rail0, rail_lo, post, rail1, rail_lo + 0.1875, 1.0 - post),
+            (rail0, rail_hi - 0.1875, post, rail1, rail_hi, 1.0 - post),
+        ])
+    return boxes
+
+
+def _door_boxes(variant):
+    facing = variant & 3
+    opened = bool(variant & 4)
+    hinge_right = bool(variant & 8)
+    t = 0.1875
+    if not opened:
+        if facing == 0:
+            return [(0.0, 0.0, 0.0, 1.0, 1.0, t)]
+        if facing == 2:
+            return [(0.0, 0.0, 1.0 - t, 1.0, 1.0, 1.0)]
+        if facing == 1:
+            return [(1.0 - t, 0.0, 0.0, 1.0, 1.0, 1.0)]
+        return [(0.0, 0.0, 0.0, t, 1.0, 1.0)]
+    if facing in (0, 2):
+        if hinge_right:
+            return [(1.0 - t, 0.0, 0.0, 1.0, 1.0, 1.0)]
+        return [(0.0, 0.0, 0.0, t, 1.0, 1.0)]
+    if hinge_right:
+        return [(0.0, 0.0, 1.0 - t, 1.0, 1.0, 1.0)]
+    return [(0.0, 0.0, 0.0, 1.0, 1.0, t)]
+
+
+def _sign_boxes(variant):
+    facing = variant & 3
+    wall = bool(variant & 4)
+    if wall:
+        if facing == 0:
+            return [(0.125, 0.25, 0.00, 0.875, 0.78, 0.08)]
+        if facing == 2:
+            return [(0.125, 0.25, 0.92, 0.875, 0.78, 1.00)]
+        if facing == 1:
+            return [(0.92, 0.25, 0.125, 1.00, 0.78, 0.875)]
+        return [(0.00, 0.25, 0.125, 0.08, 0.78, 0.875)]
+    return [
+        (0.125, 0.42, 0.44, 0.875, 0.86, 0.56),
+        (0.45, 0.00, 0.47, 0.55, 0.42, 0.53),
+    ]
+
+
 def _shape_boxes(shape_id, variant):
     if shape_id == 0:
         return [(0.0, 0.0, 0.0, 1.0, 1.0, 1.0, True)]
@@ -345,6 +431,14 @@ def _shape_boxes(shape_id, variant):
         return [box + (False,) for box in _connected_boxes(variant, pane=False)]
     if shape_id == 10:
         return [box + (False,) for box in _connected_boxes(variant, pane=True)]
+    if shape_id == 11:
+        return [box + (False,) for box in _fence_gate_boxes(variant)]
+    if shape_id == 12:
+        return [box + (False,) for box in _door_boxes(variant)]
+    if shape_id == 13:
+        return [box + (False,) for box in _sign_boxes(variant)]
+    if shape_id == 14:
+        return [(0.0, 0.0, 0.0, 1.0, 0.36, 1.0, False)]
     bounds = SHAPE_BOUNDS.get(shape_id, SHAPE_BOUNDS[0])
     ox, oy, oz, sx, sy, sz = bounds
     return [(ox, oy, oz, ox + sx, oy + sy, oz + sz, False)]

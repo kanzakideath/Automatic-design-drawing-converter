@@ -3284,6 +3284,20 @@ class DashboardApp:
         if base.endswith('_stairs'):
             top_bit = 4 if str(props.get('half', 'bottom')) == 'top' else 0
             return 6, facing | top_bit
+        if base.endswith('_fence_gate'):
+            open_bit = 4 if str(props.get('open', 'false')) == 'true' else 0
+            wall_bit = 8 if str(props.get('in_wall', 'false')) == 'true' else 0
+            return 11, facing | open_bit | wall_bit
+        if base.endswith('_door'):
+            open_bit = 4 if str(props.get('open', 'false')) == 'true' else 0
+            hinge_bit = 8 if str(props.get('hinge', 'left')) == 'right' else 0
+            return 12, facing | open_bit | hinge_bit
+        if base.endswith('_wall_sign'):
+            return 13, facing | 4
+        if base.endswith('_sign') or base.endswith('_hanging_sign'):
+            return 13, facing
+        if base.endswith('_bed'):
+            return 14, 0
         if base.endswith('_trapdoor'):
             top_bit = 4 if str(props.get('half', 'bottom')) == 'top' else 0
             open_bit = 8 if str(props.get('open', 'false')) == 'true' else 0
