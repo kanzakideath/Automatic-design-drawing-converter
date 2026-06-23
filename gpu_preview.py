@@ -100,8 +100,11 @@ def _run_preview(payload, status_q=None):
             status_q.put_nowait(('ok', ''))
         except queue.Full:
             pass
-    target_fps = max(60.0, min(360.0, float(payload.get('target_fps', 240.0) or 240.0)))
-    pyglet.clock.schedule_interval(window.update, 1.0 / target_fps)
+    if payload.get('uncapped_fps') or not payload.get('target_fps'):
+        pyglet.clock.schedule(window.update)
+    else:
+        target_fps = max(60.0, min(360.0, float(payload.get('target_fps', 240.0) or 240.0)))
+        pyglet.clock.schedule_interval(window.update, 1.0 / target_fps)
     pyglet.app.run(interval=0)
 
 
@@ -215,8 +218,12 @@ def _count_exposed_faces(blocks, occupied):
     total = 0
     for block in blocks:
         x, y, z = block[:3]
-        shape_id = int(block[8]) if len(block) > 8 else 0
-        variant = int(block[9]) if len(block) > 9 else 0
+        if len(block) >= 14:
+            shape_id = int(block[12])
+            variant = int(block[13])
+        else:
+            shape_id = int(block[8]) if len(block) > 8 else 0
+            variant = int(block[9]) if len(block) > 9 else 0
         ix, iy, iz = int(x), int(y), int(z)
         for _x0, _y0, _z0, _x1, _y1, _z1, occluding in _shape_boxes(shape_id, variant):
             for normal, _corners, _light in FACE_DEFS:
@@ -240,6 +247,15 @@ def build_mesh(payload):
     face_index = 0
     face_total = 0
     emitted_faces = 0
+    shape_boxes = _shape_boxes
+    face_defs = FACE_DEFS
+    face_tile_index = FACE_TILE_INDEX
+    atlas_len = len(atlas_uvs)
+    occupied_has = occupied.__contains__
+    positions_extend = positions.extend
+    colors_extend = colors.extend
+    tex_extend = tex_coords.extend
+    indices_extend = indices.extend
 
     for block in blocks:
         x, y, z, _r, _g, _b = block[:6]
@@ -254,10 +270,10 @@ def build_mesh(payload):
             shape_id = int(block[8]) if len(block) > 8 else 0
             variant = int(block[9]) if len(block) > 9 else 0
         ix, iy, iz = int(x), int(y), int(z)
-        for x0, y0, z0, x1, y1, z1, occluding in _shape_boxes(shape_id, variant):
+        for x0, y0, z0, x1, y1, z1, occluding in shape_boxes(shape_id, variant):
             sx, sy, sz = x1 - x0, y1 - y0, z1 - z0
-            for normal, corners, light in FACE_DEFS:
-                if occluding and (ix + normal[0], iy + normal[1], iz + normal[2]) in occupied:
+            for normal, corners, light in face_defs:
+                if occluding and occupied_has((ix + normal[0], iy + normal[1], iz + normal[2])):
                     continue
                 face_total += 1
                 if face_index % stride:
@@ -268,17 +284,17 @@ def build_mesh(payload):
                     continue
                 light_value = max(0, min(255, int(255 * light)))
                 pts = [(ix + x0 + cx * sx, iy + y0 + cy * sy, iz + z0 + cz * sz) for cx, cy, cz in corners]
-                tile_index = face_tiles[FACE_TILE_INDEX.get(normal, 3)]
-                if tile_index < 0 or tile_index >= len(atlas_uvs):
+                tile_index = face_tiles[face_tile_index.get(normal, 3)]
+                if tile_index < 0 or tile_index >= atlas_len:
                     tile_index = 0
                 u0, v0, u1, v1 = atlas_uvs[tile_index]
                 quad_uvs = ((u0, v0), (u1, v0), (u1, v1), (u0, v1))
                 base_vertex = len(positions) // 3
                 for corner_index, (px, py, pz) in enumerate(pts):
-                    positions.extend((float(px), float(py), float(pz)))
-                    colors.extend((light_value, light_value, light_value, 255))
-                    tex_coords.extend(quad_uvs[corner_index])
-                indices.extend((base_vertex, base_vertex + 1, base_vertex + 2,
+                    positions_extend((float(px), float(py), float(pz)))
+                    colors_extend((light_value, light_value, light_value, 255))
+                    tex_extend(quad_uvs[corner_index])
+                indices_extend((base_vertex, base_vertex + 1, base_vertex + 2,
                                 base_vertex, base_vertex + 2, base_vertex + 3))
                 emitted_faces += 1
                 face_index += 1
@@ -354,6 +370,9 @@ class GpuPreviewWindow:
         self._closed = False
         self._overlay_size = (0, 0)
         self._overlay_dirty = True
+        self.show_overlay = bool(payload.get('show_overlay', False))
+        self.force_continuous_redraw = bool(payload.get('force_continuous_redraw', True))
+        self._caption_title = str(payload.get('title') or 'GPU Preview')
 
         width = int(payload.get('width') or 1280)
         height = int(payload.get('height') or 760)
@@ -411,7 +430,11 @@ class GpuPreviewWindow:
     def _build_vertex_lists(self):
         from pyglet import gl
 
-        positions, colors, tex_coords, indices, face_total, emitted_faces, stride = build_mesh(self.payload)
+        prebuilt = self.payload.get('prebuilt_mesh')
+        if prebuilt and len(prebuilt) == 7:
+            positions, colors, tex_coords, indices, face_total, emitted_faces, stride = prebuilt
+        else:
+            positions, colors, tex_coords, indices, face_total, emitted_faces, stride = build_mesh(self.payload)
         self.face_total = face_total
         self.face_emitted = emitted_faces
         self.stride = stride
@@ -475,7 +498,8 @@ class GpuPreviewWindow:
             self.program['use_texture'] = 1
             self.mesh_list.draw(gl.GL_TRIANGLES)
         gl.glDisable(gl.GL_DEPTH_TEST)
-        self._draw_overlay()
+        if self.show_overlay:
+            self._draw_overlay()
 
     def _mvp_matrix(self):
         from pyglet.math import Mat4, Vec3
@@ -538,6 +562,12 @@ class GpuPreviewWindow:
             self._fps_frames = 0
             self._fps_time = 0.0
             self._overlay_dirty = True
+            self._update_overlay_text()
+        if self.force_continuous_redraw:
+            try:
+                self.window.invalid = True
+            except Exception:
+                pass
         if self.mode != 'walk':
             return
         span = max(float(self.bounds.get('span_x', 32.0)), float(self.bounds.get('span_z', 32.0)))
@@ -579,14 +609,20 @@ class GpuPreviewWindow:
         self.label.draw()
 
     def _update_overlay_text(self):
-        title = self.payload.get('title') or 'GPU Preview'
+        title = self._caption_title
         if len(title) > 54:
             title = title[:51] + '...'
         mode = '内部視点' if self.mode == 'walk' else '外観'
         downsample = ' / 高速LOD %d' % self.stride if self.stride > 1 else ''
+        caption = '%s | %s | %.0f fps | faces %s%s' % (
+            title, mode, self.fps, f'{self.face_emitted:,}/{self.face_total:,}', downsample)
+        try:
+            self.window.set_caption(caption)
+        except Exception:
+            pass
         self.label.text = (
-            '%s | %s | %.0f fps | 面 %s%s\n左ドラッグ: 回転 / 右ドラッグ: 移動 / ホイール: 拡大縮小 / R: リセット / F: 内部視点'
-            % (title, mode, self.fps, f'{self.face_emitted:,}/{self.face_total:,}', downsample)
+            '%s\n左ドラッグ: 回転 / 右ドラッグ: 移動 / ホイール: 拡大縮小 / R: リセット / F: 内部視点 / H: 表示切替'
+            % caption
         )
 
     def on_mouse_press(self, _x, _y, button, _mods):
@@ -627,6 +663,9 @@ class GpuPreviewWindow:
             self.mode = 'walk' if self.mode == 'orbit' else 'orbit'
             if self.mode == 'walk':
                 self.pitch = 8.0
+            self._overlay_dirty = True
+        elif symbol == key.H:
+            self.show_overlay = not self.show_overlay
             self._overlay_dirty = True
         elif self.mode == 'orbit' and symbol == key.LEFT:
             self.yaw -= 8.0

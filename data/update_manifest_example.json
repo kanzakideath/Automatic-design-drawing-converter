@@ -1,7 +1,7 @@
 {
-  "version": "1.4.0",
-  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.4.0/SchematicMaterialConverter.exe",
-  "sha256": "fac263474982383091f6b40d03b2c41c3c88f50def748eeb6470bf0e5b257e32",
-  "notes": "Make the main workflow preview-first after loading a schematic. The app now opens directly into the large preview screen, uses the full available width, and keeps material editing one click away with a clearer header button.",
+  "version": "1.4.1",
+  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.4.1/SchematicMaterialConverter.exe",
+  "sha256": "d25262ab00f31eada74a11f03f4abc3a19e6f7aa67695d26646becf9387330e1",
+  "notes": "Add a dedicated Preview Studio sidebar and speed up preview work. The normal preview now renders lighter, GPU preview data and meshes are warmed in the background, repeated GPU preview opens use a cache, and the OpenGL window runs in uncapped high-FPS mode with the heavy overlay hidden by default.",
   "mandatory": false
 }

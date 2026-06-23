@@ -7,6 +7,7 @@ import os
 import random
 import csv
 import ctypes
+import threading
 import tkinter as tk
 from tkinter import font as tkfont
 from tkinter import filedialog, messagebox, ttk
@@ -33,13 +34,13 @@ except Exception:
 
 APP_TITLE = '設計図自動素材変換ツール'
 KEEP = '__keep__'
-GPU_PREVIEW_BLOCK_LIMIT = 180000
-GPU_PREVIEW_FACE_LIMIT = 220000
-CPU_PREVIEW_IDLE_BLOCK_LIMIT = 1600
-CPU_PREVIEW_IDLE_FACE_LIMIT = 2400
-CPU_PREVIEW_TEXTURE_FACE_LIMIT = 2400
-CPU_PREVIEW_DRAG_BLOCK_LIMIT = 96
-CPU_PREVIEW_DRAG_FACE_LIMIT = 28
+GPU_PREVIEW_BLOCK_LIMIT = 220000
+GPU_PREVIEW_FACE_LIMIT = 180000
+CPU_PREVIEW_IDLE_BLOCK_LIMIT = 900
+CPU_PREVIEW_IDLE_FACE_LIMIT = 1100
+CPU_PREVIEW_TEXTURE_FACE_LIMIT = 360
+CPU_PREVIEW_DRAG_BLOCK_LIMIT = 48
+CPU_PREVIEW_DRAG_FACE_LIMIT = 72
 
 CATEGORY_LABELS = [
     ('recommended', 'おすすめ（同じ形）'),
@@ -363,7 +364,7 @@ class InteractivePreview(tk.Canvas):
         if immediate:
             self._render()
         else:
-            self._after_id = self.after(4 if self._drag else 24, self._render)
+            self._after_id = self.after(12 if self._drag else 36, self._render)
 
     def view_state(self):
         return {
@@ -382,7 +383,7 @@ class InteractivePreview(tk.Canvas):
         h = max(150, self.winfo_height())
         try:
             large = w * h >= 260000
-            render_scale = 0.34 if self._drag else (0.58 if large else 0.70)
+            render_scale = 0.24 if self._drag else (0.42 if large else 0.56)
             rw = max(220, int(w * render_scale))
             rh = max(135, int(h * render_scale))
             if self._drag:
@@ -392,8 +393,10 @@ class InteractivePreview(tk.Canvas):
             else:
                 max_blocks = CPU_PREVIEW_IDLE_BLOCK_LIMIT if large else max(3600, int(CPU_PREVIEW_IDLE_BLOCK_LIMIT * 0.65))
                 face_limit = CPU_PREVIEW_IDLE_FACE_LIMIT if large else max(1200, int(CPU_PREVIEW_IDLE_FACE_LIMIT * 0.65))
-                texture_limit = face_limit if self.focus_view else (
-                    CPU_PREVIEW_TEXTURE_FACE_LIMIT if large else max(180, int(CPU_PREVIEW_TEXTURE_FACE_LIMIT * 0.65)))
+                texture_limit = min(
+                    face_limit,
+                    CPU_PREVIEW_TEXTURE_FACE_LIMIT if large else max(120, int(CPU_PREVIEW_TEXTURE_FACE_LIMIT * 0.65))
+                )
             state = self.view_state()
             cache_key = None if self._drag else (
                 w, h, rw, rh,
@@ -514,6 +517,12 @@ class DashboardApp:
         self._wheel_target = None
         self._wheel_bound = False
         self._preview_source_cache = {}
+        self._target_map_cache_token = None
+        self._target_map_cache = {}
+        self._gpu_payload_cache_token = None
+        self._gpu_payload_cache = None
+        self._gpu_payload_building = False
+        self._gpu_warmup_after_id = None
         self._regid2file = {}
         self.active_filter = 'all'
         self.preview_tab = 'overview'
@@ -845,6 +854,12 @@ class DashboardApp:
             messagebox.showwarning(APP_TITLE, 'GPUプレビューを起動できませんでした。\nCPUプレビューに切り替えます。\n\n%s' % exc)
             return False
         try:
+            token = self._preview_cache_token()
+            if (self._gpu_payload_building and
+                    not (self._gpu_payload_cache_token == token and self._gpu_payload_cache is not None)):
+                self._sync_progress(text='進行状況: GPUプレビューを準備中です...')
+                self.root.after(280, self.open_full_preview)
+                return True
             payload = self._gpu_preview_payload()
             if not payload.get('blocks'):
                 messagebox.showinfo(APP_TITLE, 'プレビューできるブロックが見つかりませんでした。')
@@ -1215,16 +1230,18 @@ class DashboardApp:
         self.content.grid_rowconfigure(0, weight=1)
 
         if self.focus_mode:
-            self.content.grid_columnconfigure(0, minsize=280, weight=0)
+            self.content.grid_columnconfigure(0, minsize=330, weight=0)
             self.content.grid_columnconfigure(1, minsize=1120, weight=1)
             self.left_col = tk.Frame(self.content, bg=UI['BG'])
             self.left_col.grid(row=0, column=0, sticky='nsew', padx=(0, 14))
+            self.left_col.configure(width=330)
+            self.left_col.grid_propagate(False)
             self.center_col = tk.Frame(self.content, bg=UI['BG'])
             self.right_col = tk.Frame(self.content, bg=UI['BG'])
             self.right_col.grid(row=0, column=1, sticky='nsew')
             self.right_col.grid_rowconfigure(0, weight=1)
             self.right_col.grid_columnconfigure(0, weight=1)
-            self._build_left_column()
+            self._build_preview_sidebar()
             self._build_preview_panel()
             return
 
@@ -1274,6 +1291,81 @@ class DashboardApp:
         command = self.choose_file if no == 1 else (self.open_full_preview if no == 2 else self.do_convert)
         for widget in (f,) + tuple(f.winfo_children()):
             widget.bind('<Button-1>', lambda _e, cmd=command: cmd())
+
+    def _build_preview_sidebar(self):
+        panel = self._panel(self.left_col)
+        panel.pack(fill='both', expand=True)
+        panel.configure(width=330)
+        panel.pack_propagate(False)
+        panel.grid_columnconfigure(0, weight=1)
+
+        head = tk.Frame(panel, bg=UI['PANEL'])
+        head.pack(fill='x', padx=12, pady=(12, 8))
+        self._label(head, 'プレビュースタジオ', size=12, weight='bold').pack(anchor='w')
+        self._label(head, '見た目確認を先に行い、必要な時だけ素材を編集します。',
+                    size=7, fg=UI['MUTED'], wraplength=238, justify='left').pack(anchor='w', pady=(2, 0))
+
+        if self.loaded_nbt is None:
+            drop = tk.Frame(panel, bg='#f7fbff', highlightthickness=1, highlightbackground=UI['BORDER_HI'])
+            drop.pack(fill='x', padx=12, pady=(4, 12), ipady=34)
+            self._register_drop(drop)
+            drop.bind('<Button-1>', lambda _e: self.choose_file())
+            self._label(drop, '設計図を読み込む', size=13, weight='bold', fg=UI['TEXT_SOFT'],
+                        bg='#f7fbff').pack(pady=(4, 2))
+            self._label(drop, self._default_drop_text(), size=8, fg=UI['MUTED'],
+                        bg='#f7fbff', justify='center').pack()
+            return
+
+        hero = tk.Frame(panel, bg=UI['PANEL'])
+        hero.pack(fill='x', padx=12, pady=(0, 10))
+        img = self._loaded_thumb(82, 110)
+        pic = tk.Label(hero, image=img, bg=UI['PANEL'])
+        pic.image = img
+        pic.pack(anchor='center', pady=(0, 8))
+        name = os.path.basename(self.src_path or '')
+        self._label(hero, name, size=10, weight='bold', wraplength=238,
+                    justify='center').pack(anchor='center')
+        self._label(hero, '実テクスチャでプレビュー中', size=8, fg=UI['GREEN']).pack(anchor='center', pady=(2, 0))
+
+        stats = self._stats()
+        grid = tk.Frame(panel, bg=UI['PANEL'])
+        grid.pack(fill='x', padx=12, pady=(4, 10))
+        for col in range(2):
+            grid.grid_columnconfigure(col, weight=1, uniform='preview_stats')
+        self._sidebar_stat(grid, 0, 0, '総ブロック', stats['total_blocks'])
+        self._sidebar_stat(grid, 0, 1, 'ユニーク', str(stats['unique_total']))
+        self._sidebar_stat(grid, 1, 0, '変換ルール', str(stats['changed_palette']))
+        self._sidebar_stat(grid, 1, 1, '競合', str(stats['conflicts']))
+
+        action = tk.Frame(panel, bg=UI['PANEL'])
+        action.pack(fill='x', padx=12, pady=(0, 10))
+        self._button(action, '大きいGPUプレビュー', self.open_full_preview,
+                     bg=UI['ACCENT'], fg='white', size=10, pady=8).pack(fill='x', pady=(0, 6))
+        self._button(action, '素材を編集', self.toggle_focus_mode,
+                     bg=UI['BTN_BG_2'], size=9, pady=7).pack(fill='x', pady=(0, 6))
+        row = tk.Frame(action, bg=UI['PANEL'])
+        row.pack(fill='x')
+        self._button(row, 'PNG保存', self.export_preview, bg=UI['BTN_BG'],
+                     size=8, padx=8, pady=6).pack(side='left', fill='x', expand=True, padx=(0, 5))
+        self._button(row, '建材リスト', self.export_materials_image, bg=UI['BTN_BG'],
+                     size=8, padx=8, pady=6).pack(side='left', fill='x', expand=True, padx=(5, 0))
+        self._button(action, '別の設計図を読み込む', self.choose_file,
+                     bg=UI['BTN_BG'], size=8, pady=6).pack(fill='x', pady=(6, 0))
+
+        ops = tk.Frame(panel, bg=UI['PANEL_2'], highlightthickness=1, highlightbackground=UI['BORDER'])
+        ops.pack(fill='x', padx=12, pady=(0, 10))
+        self._label(ops, '操作', size=9, weight='bold', bg=UI['PANEL_2']).pack(anchor='w', padx=10, pady=(8, 2))
+        self._label(ops, '左ドラッグで回転 / 右ドラッグで移動',
+                    size=8, fg=UI['TEXT_SOFT'], bg=UI['PANEL_2']).pack(anchor='w', padx=10)
+        self._label(ops, 'ホイールで拡大縮小 / ダブルクリックで内部視点',
+                    size=8, fg=UI['TEXT_SOFT'], bg=UI['PANEL_2']).pack(anchor='w', padx=10)
+        self._label(ops, '', size=1, bg=UI['PANEL_2']).pack(pady=(0, 4))
+
+    def _sidebar_stat(self, parent, row, col, title, value):
+        box = tk.Frame(parent, bg=UI['PANEL_2'], highlightthickness=1, highlightbackground=UI['BORDER'])
+        box.grid(row=row, column=col, sticky='ew', padx=(0 if col == 0 else 5, 0 if col == 1 else 5), pady=3)
+        self._label(box, title, size=7, fg=UI['MUTED'], bg=UI['PANEL_2']).pack(anchor='w', padx=8, pady=(6, 0))
+        self._label(box, value, size=10, weight='bold', bg=UI['PANEL_2']).pack(anchor='w', padx=8, pady=(0, 6))
 
     def _build_left_column(self):
         info = self._panel(self.left_col)
@@ -1522,6 +1614,7 @@ class DashboardApp:
             w.destroy()
         self._build_main()
         self._sync_progress()
+        self._queue_gpu_preview_warmup()
 
     def _sync_progress(self, value=None, text=None):
         if value is not None:
@@ -1578,6 +1671,10 @@ class DashboardApp:
         self.last_output = None
         self.overrides = {}
         self._preview_source_cache = {}
+        self._target_map_cache_token = None
+        self._target_map_cache = {}
+        self._gpu_payload_cache_token = None
+        self._gpu_payload_cache = None
         self.focus_mode = True
         for widget in self.header.winfo_children():
             widget.destroy()
@@ -1895,6 +1992,7 @@ class DashboardApp:
             self.preview_view.refresh()
         if hasattr(self, 'preview_body'):
             self._build_preview_body()
+        self._queue_gpu_preview_warmup()
 
     # ---------------------------------------------------------------- preview
     def _build_preview_body(self):
@@ -2088,6 +2186,10 @@ class DashboardApp:
 
     # ---------------------------------------------------------------- actions
     def _mark_dirty(self):
+        self._target_map_cache_token = None
+        self._target_map_cache = {}
+        self._gpu_payload_cache_token = None
+        self._gpu_payload_cache = None
         if hasattr(self, 'save_state'):
             self.save_state.configure(text='● 未保存の変更があります', fg=UI['ORANGE'])
 
@@ -2511,7 +2613,54 @@ class DashboardApp:
         props = rec[4] if len(rec) > 4 and isinstance(rec[4], dict) else {}
         return rec[0], rec[1], rec[2], rec[3], props
 
+    def _queue_gpu_preview_warmup(self):
+        if self.loaded_nbt is None:
+            return
+        try:
+            if self._gpu_warmup_after_id is not None:
+                self.root.after_cancel(self._gpu_warmup_after_id)
+        except tk.TclError:
+            pass
+        try:
+            self._gpu_warmup_after_id = self.root.after(650, self._run_queued_gpu_preview_warmup)
+        except tk.TclError:
+            self._gpu_warmup_after_id = None
+
+    def _run_queued_gpu_preview_warmup(self):
+        self._gpu_warmup_after_id = None
+        self._schedule_gpu_preview_warmup()
+
+    def _schedule_gpu_preview_warmup(self):
+        if self.loaded_nbt is None or self._gpu_payload_building:
+            return
+        token = self._preview_cache_token()
+        if self._gpu_payload_cache_token == token and self._gpu_payload_cache is not None:
+            return
+        self._gpu_payload_building = True
+
+        def worker(expected_token):
+            try:
+                payload = self._gpu_preview_payload()
+                if payload.get('blocks') and 'prebuilt_mesh' not in payload:
+                    try:
+                        import gpu_preview
+                        payload['prebuilt_mesh'] = gpu_preview.build_mesh(payload)
+                    except Exception:
+                        pass
+                ok = bool(payload.get('blocks')) and self._preview_cache_token() == expected_token
+            except Exception:
+                ok = False
+            finally:
+                self._gpu_payload_building = False
+            if ok:
+                self._safe_after(lambda: self._sync_progress(text='進行状況: GPUプレビュー準備完了'))
+
+        threading.Thread(target=worker, args=(token,), daemon=True).start()
+
     def _gpu_preview_payload(self):
+        token = self._preview_cache_token()
+        if self._gpu_payload_cache_token == token and self._gpu_payload_cache is not None:
+            return self._gpu_payload_cache
         records = self._focused_render_records(max_blocks=GPU_PREVIEW_BLOCK_LIMIT)
         occupied = set((int(self._preview_rec_parts(rec)[0]),
                         int(self._preview_rec_parts(rec)[1]),
@@ -2529,7 +2678,7 @@ class DashboardApp:
             blocks.append((int(x), int(y), int(z), int(r), int(g), int(b),
                            face_tiles[0], face_tiles[1], face_tiles[2], face_tiles[3],
                            face_tiles[4], face_tiles[5], shape_id, variant))
-        return {
+        payload = {
             'title': os.path.basename(self.src_path or 'schematic'),
             'blocks': blocks,
             'occupied': occupied,
@@ -2539,13 +2688,19 @@ class DashboardApp:
             'max_faces': GPU_PREVIEW_FACE_LIMIT,
             'width': 1280,
             'height': 760,
-            'startup_timeout': 4.5,
-            'target_fps': 240,
+            'startup_timeout': 0.05,
+            'target_fps': 0,
+            'uncapped_fps': True,
+            'show_overlay': False,
+            'force_continuous_redraw': True,
             'initial_mode': 'orbit',
             'initial_yaw': -38.0,
             'initial_pitch': 26.0,
             'initial_zoom': 1.65,
         }
+        self._gpu_payload_cache_token = token
+        self._gpu_payload_cache = payload
+        return payload
 
     def _gpu_texture_atlas(self, records):
         bases = sorted({bd.strip_ns(self._preview_rec_parts(rec)[3]) for rec in records})
@@ -2706,8 +2861,10 @@ class DashboardApp:
 
     def _focused_render_records(self, max_blocks=5600):
         max_blocks = max(100, int(max_blocks or 5600))
-        if max_blocks <= 6000:
-            source_limit = max(40000, int(max_blocks * 16))
+        if max_blocks <= 1200:
+            source_limit = max(8000, int(max_blocks * 10))
+        elif max_blocks <= 6000:
+            source_limit = max(18000, int(max_blocks * 12))
         else:
             source_limit = min(180000, max_blocks)
         raw_records = self._source_surface_records(max_blocks=source_limit)
@@ -3109,12 +3266,17 @@ class DashboardApp:
         draw.polygon(top, fill=self._shade(color, 1.08), outline=outline)
 
     def _target_map(self):
+        token = self._preview_cache_token()
+        if self._target_map_cache_token == token:
+            return self._target_map_cache
         target_map = {}
         for conv in self._all_records():
             target = self._target_for(conv)
             mapped = bd.strip_ns(conv.source) if target == KEEP else bd.strip_ns(target)
             target_map[conv.source] = mapped
             target_map[bd.strip_ns(conv.source)] = mapped
+        self._target_map_cache_token = token
+        self._target_map_cache = target_map
         return target_map
 
     def _map_render_records(self, raw_records):
