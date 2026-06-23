@@ -36,9 +36,9 @@ APP_TITLE = '設計図自動素材変換ツール'
 KEEP = '__keep__'
 GPU_PREVIEW_BLOCK_LIMIT = 220000
 GPU_PREVIEW_FACE_LIMIT = 180000
-CPU_PREVIEW_IDLE_BLOCK_LIMIT = 900
-CPU_PREVIEW_IDLE_FACE_LIMIT = 1100
-CPU_PREVIEW_TEXTURE_FACE_LIMIT = 360
+CPU_PREVIEW_IDLE_BLOCK_LIMIT = 1400
+CPU_PREVIEW_IDLE_FACE_LIMIT = 1800
+CPU_PREVIEW_TEXTURE_FACE_LIMIT = 520
 CPU_PREVIEW_DRAG_BLOCK_LIMIT = 48
 CPU_PREVIEW_DRAG_FACE_LIMIT = 72
 
@@ -250,7 +250,7 @@ class InteractivePreview(tk.Canvas):
         self.bind('<ButtonRelease-2>', self._on_release)
         self.bind('<ButtonRelease-3>', self._on_release)
         self.bind('<MouseWheel>', self._on_wheel)
-        self.bind('<Double-Button-1>', self.toggle_mode)
+        self.bind('<Double-Button-1>', self._toggle_detail_view)
         self.bind('<KeyPress>', self._on_key)
         self._draw_loading(width, height)
         self.refresh()
@@ -275,8 +275,8 @@ class InteractivePreview(tk.Canvas):
             self.pan_x = panx0 - ((event.x - x0) / float(max(180, self.winfo_width()))) * scale_x
             self.pan_y = pany0 + ((event.y - y0) / float(max(140, self.winfo_height()))) * scale_y
         else:
-            self.yaw = yaw0 + (event.x - x0) * 0.32
-            self.pitch = max(-0.12, min(0.88, pitch0 + (y0 - event.y) * 0.0034))
+            self.yaw = yaw0 + (event.x - x0) * 0.18
+            self.pitch = max(-0.12, min(0.88, pitch0 + (y0 - event.y) * 0.0024))
         self.refresh()
 
     def _on_release(self, _event):
@@ -284,7 +284,7 @@ class InteractivePreview(tk.Canvas):
         self.refresh(immediate=True)
 
     def _on_wheel(self, event):
-        factor = 1.12 if event.delta > 0 else 0.89
+        factor = 1.08 if event.delta > 0 else 0.925
         self.set_zoom(self.zoom * factor)
         self.refresh(immediate=True)
         return 'break'
@@ -343,6 +343,13 @@ class InteractivePreview(tk.Canvas):
             self.pan_x = 0.0
             self.pan_y = 0.0
         self.refresh(immediate=True)
+
+    def _toggle_detail_view(self, _event=None):
+        if self.zoom < 3.0 or not self.focus_view:
+            self.set_view(-28.0, 0.24, 4.4, focus=True)
+        else:
+            self.set_view(-38.0, 0.34, 1.55, focus=False)
+        return 'break'
 
     def reset_view(self):
         self.yaw = -28.0
@@ -1357,7 +1364,7 @@ class DashboardApp:
         self._label(ops, '操作', size=9, weight='bold', bg=UI['PANEL_2']).pack(anchor='w', padx=10, pady=(8, 2))
         self._label(ops, '左ドラッグで回転 / 右ドラッグで移動',
                     size=8, fg=UI['TEXT_SOFT'], bg=UI['PANEL_2']).pack(anchor='w', padx=10)
-        self._label(ops, 'ホイールで拡大縮小 / ダブルクリックで内部視点',
+        self._label(ops, 'ホイールで拡大縮小 / ダブルクリックで近景・全体切替',
                     size=8, fg=UI['TEXT_SOFT'], bg=UI['PANEL_2']).pack(anchor='w', padx=10)
         self._label(ops, '', size=1, bg=UI['PANEL_2']).pack(pady=(0, 4))
 
@@ -1516,6 +1523,9 @@ class DashboardApp:
                     fg=UI['ORANGE'] if self._conflict_count() else UI['GREEN']).pack(side='right')
 
     def _build_preview_panel(self):
+        return self._build_preview_panel_v2()
+
+    def _build_preview_panel_legacy(self):
         panel = self._panel(self.right_col)
         panel.grid(row=0, column=0, sticky='nsew')
         panel.grid_columnconfigure(0, weight=1)
@@ -1587,6 +1597,113 @@ class DashboardApp:
         self._button(bottom, '建材リスト', self.export_materials_image,
                      bg=UI['BTN_BG'], size=8, padx=10, pady=6).pack(side='left', padx=(6, 0))
         self._button(bottom, '⌄', self.open_export_menu, bg=UI['BTN_BG'], size=8, padx=10, pady=6).pack(side='right', padx=(6, 0))
+
+    def _build_preview_panel_v2(self):
+        panel = self._panel(self.right_col)
+        panel.grid(row=0, column=0, sticky='nsew')
+        panel.grid_columnconfigure(0, weight=1)
+        panel.grid_rowconfigure(1, minsize=430 if self.focus_mode else 320, weight=10)
+
+        head = tk.Frame(panel, bg=UI['PANEL'])
+        head.grid(row=0, column=0, sticky='ew', padx=16, pady=(14, 10))
+        head.grid_columnconfigure(0, weight=1)
+
+        title_box = tk.Frame(head, bg=UI['PANEL'])
+        title_box.grid(row=0, column=0, sticky='w')
+        self._label(title_box, '実ブロックプレビュー', size=14, weight='bold',
+                    bg=UI['PANEL']).pack(anchor='w')
+        self._label(title_box, 'Minecraftの実テクスチャで近景表示。細部確認はGPUプレビューで開きます。',
+                    size=8, fg=UI['MUTED'], bg=UI['PANEL']).pack(anchor='w', pady=(2, 0))
+
+        head_actions = tk.Frame(head, bg=UI['PANEL'])
+        head_actions.grid(row=0, column=1, sticky='e')
+        self._button(head_actions, 'GPUで大きく見る', self.open_full_preview,
+                     bg=UI['ACCENT'], fg='white', size=9, padx=14, pady=7).pack(side='left', padx=(0, 8))
+        self._button(head_actions, '素材編集', self.toggle_focus_mode,
+                     bg=UI['BTN_BG_2'], size=9, padx=12, pady=7).pack(side='left', padx=(0, 8))
+        self.start_btn = self._button(head_actions, '変換実行', self.do_convert, bg=UI['GREEN'],
+                                      fg='white', size=9, padx=14, pady=7,
+                                      state='normal' if self.loaded_nbt is not None else 'disabled')
+        self.start_btn.pack(side='left')
+
+        preview_w = 1120 if self.focus_mode else 720
+        preview_h = 520 if self.focus_mode else 410
+        self.preview_view = InteractivePreview(panel, self, width=preview_w, height=preview_h)
+        self.preview_view.grid(row=1, column=0, sticky='nsew', padx=16, pady=(0, 10))
+
+        controls = tk.Frame(panel, bg=UI['PANEL'])
+        controls.grid(row=2, column=0, sticky='ew', padx=16, pady=(0, 8))
+        for label, args in [
+            ('近景', (-28.0, 0.24, 4.4, True)),
+            ('全体', (-38.0, 0.34, 1.55, False)),
+            ('上から', (0.0, 0.72, 1.35, False)),
+            ('横から', (-90.0, 0.20, 2.8, True)),
+        ]:
+            self._button(controls, label, lambda a=args: self._preview_set_view(*a),
+                         bg=UI['BTN_BG_2'], size=9, padx=13, pady=6).pack(side='left', padx=(0, 7))
+        self._button(controls, 'リセット', self._reset_preview_view,
+                     bg=UI['BTN_BG'], size=9, padx=13, pady=6).pack(side='left', padx=(0, 7))
+        self._button(controls, '拡大', lambda: self._preview_zoom(1.12),
+                     bg=UI['BTN_BG_2'], size=9, padx=12, pady=6).pack(side='right', padx=(7, 0))
+        self._button(controls, '縮小', lambda: self._preview_zoom(1 / 1.12),
+                     bg=UI['BTN_BG_2'], size=9, padx=12, pady=6).pack(side='right')
+
+        tabs = tk.Frame(panel, bg=UI['PANEL'])
+        tabs.grid(row=3, column=0, sticky='ew', padx=16, pady=(0, 8))
+        self.preview_tab_buttons = {}
+        for key, label in [('overview', '概要'), ('materials', '建材'), ('stats', '統計')]:
+            btn = self._button(tabs, label, lambda k=key: self.set_preview_tab(k),
+                               bg=(UI['ACCENT'] if self.preview_tab == key else UI['BTN_BG']),
+                               size=9, padx=16, pady=6)
+            btn.pack(side='left', fill='x', expand=True, padx=(0, 4))
+            self.preview_tab_buttons[key] = btn
+        self._button(tabs, 'PNG保存', self.export_preview,
+                     bg=UI['BTN_BG_2'], size=9, padx=12, pady=6).pack(side='left', padx=(8, 0))
+        self._button(tabs, '建材リスト画像', self.export_materials_image,
+                     bg=UI['BTN_BG_2'], size=9, padx=12, pady=6).pack(side='left', padx=(6, 0))
+
+        self.preview_body = tk.Frame(panel, bg=UI['PANEL'])
+        self.preview_body.grid(row=4, column=0, sticky='nsew', padx=16)
+        self._compact_preview_body = True
+        self._build_preview_body_compact()
+
+    def _build_preview_body_compact(self):
+        for w in self.preview_body.winfo_children():
+            w.destroy()
+        stats = self._stats()
+        row = tk.Frame(self.preview_body, bg=UI['PANEL'])
+        row.pack(fill='x', pady=(0, 10))
+        if self.preview_tab == 'materials':
+            top = self._top_materials()[:4]
+            if not top:
+                top = [('建材', '-')]
+            for label, value in top:
+                box = tk.Frame(row, bg=UI['PANEL_2'], highlightthickness=1, highlightbackground=UI['BORDER'])
+                box.pack(side='left', fill='x', expand=True, padx=(0, 8))
+                self._label(box, label, size=8, weight='bold', bg=UI['PANEL_2'],
+                            wraplength=190).pack(anchor='w', padx=10, pady=(7, 0))
+                self._label(box, value, size=9, fg=UI['ACCENT'], weight='bold',
+                            bg=UI['PANEL_2']).pack(anchor='w', padx=10, pady=(0, 7))
+            return
+        if self.preview_tab == 'stats':
+            items = [
+                ('競合ルール', stats['conflicts']),
+                ('未設定ブロック', stats['unset']),
+                ('変換パレット', stats['changed_palette']),
+                ('保持ブロック', stats['kept']),
+            ]
+        else:
+            items = [
+                ('総ブロック', stats['total_blocks']),
+                ('ユニーク', stats['unique_total']),
+                ('変換ルール', stats['changed_palette']),
+                ('競合', stats['conflicts']),
+            ]
+        for label, value in items:
+            box = tk.Frame(row, bg=UI['PANEL_2'], highlightthickness=1, highlightbackground=UI['BORDER'])
+            box.pack(side='left', fill='x', expand=True, padx=(0, 8))
+            self._label(box, label, size=8, fg=UI['MUTED'], bg=UI['PANEL_2']).pack(anchor='w', padx=10, pady=(7, 0))
+            self._label(box, str(value), size=11, weight='bold', bg=UI['PANEL_2']).pack(anchor='w', padx=10, pady=(0, 7))
 
     def _build_footer(self):
         self.footer.grid_columnconfigure(1, weight=1)
@@ -1953,7 +2070,10 @@ class DashboardApp:
         self.preview_tab = key
         self._update_preview_tabs()
         if hasattr(self, 'preview_body'):
-            self._build_preview_body()
+            if getattr(self, '_compact_preview_body', False):
+                self._build_preview_body_compact()
+            else:
+                self._build_preview_body()
 
     def _update_preview_tabs(self):
         for key, btn in getattr(self, 'preview_tab_buttons', {}).items():

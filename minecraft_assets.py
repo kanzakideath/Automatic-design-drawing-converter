@@ -263,6 +263,16 @@ def _load_texture(texture_ref: str) -> Image.Image | None:
     return im
 
 
+def _load_texture_raw(texture_ref: str) -> Image.Image | None:
+    path = _texture_file(texture_ref)
+    if not path:
+        return None
+    try:
+        return Image.open(path).convert("RGBA")
+    except Exception:
+        return None
+
+
 def _tint_texture(im: Image.Image, tint: tuple[int, int, int], divisor: int = 170) -> Image.Image:
     src = im.convert("RGBA")
     out = Image.new("RGBA", src.size)
@@ -301,6 +311,50 @@ def _special_block_texture(base: str, top: bool, face: str | None = None) -> Ima
     if base == "water":
         tex = _load_texture("block/water_still")
         return _tint_texture(tex, WATER_TINT, divisor=210) if tex is not None else None
+    face_key = "top" if top or face == "up" else ("bottom" if face == "down" else "side")
+    directional = {
+        "barrel": {"top": "block/barrel_top", "bottom": "block/barrel_bottom", "side": "block/barrel_side"},
+        "crafting_table": {"top": "block/crafting_table_top", "bottom": "block/oak_planks",
+                           "side": "block/crafting_table_side", "north": "block/crafting_table_front",
+                           "south": "block/crafting_table_front"},
+        "furnace": {"top": "block/furnace_top", "bottom": "block/furnace_top", "side": "block/furnace_side",
+                    "north": "block/furnace_front", "south": "block/furnace_front"},
+        "blast_furnace": {"top": "block/blast_furnace_top", "bottom": "block/blast_furnace_top",
+                          "side": "block/blast_furnace_side", "north": "block/blast_furnace_front",
+                          "south": "block/blast_furnace_front"},
+        "smoker": {"top": "block/smoker_top", "bottom": "block/smoker_bottom", "side": "block/smoker_side",
+                   "north": "block/smoker_front", "south": "block/smoker_front"},
+        "observer": {"top": "block/observer_top", "bottom": "block/observer_top", "side": "block/observer_side",
+                     "north": "block/observer_front", "south": "block/observer_back"},
+        "hopper": {"top": "block/hopper_top", "bottom": "block/hopper_outside", "side": "block/hopper_outside"},
+        "scaffolding": {"top": "block/scaffolding_top", "bottom": "block/scaffolding_bottom",
+                        "side": "block/scaffolding_side"},
+        "piston": {"top": "block/piston_top", "bottom": "block/piston_bottom", "side": "block/piston_side"},
+        "sticky_piston": {"top": "block/piston_top_sticky", "bottom": "block/piston_bottom",
+                          "side": "block/piston_side"},
+    }
+    face_name = str(face or "").lower()
+    if base in directional:
+        entry = directional[base]
+        tex = _load_texture(entry.get(face_name) or entry.get(face_key) or entry.get("side"))
+        if tex is not None:
+            return tex
+    if base == "chest" or base == "trapped_chest":
+        # Chest uses an entity atlas rather than a normal block model.  Crop a
+        # readable patch so previews do not fall back to generic planks.
+        tex = _load_texture_raw("entity/chest/trapped" if base == "trapped_chest" else "entity/chest/normal")
+        if tex is not None:
+            box = (16, 16, 32, 32) if face_key == "side" else (16, 0, 32, 16)
+            return tex.crop(box).resize((16, 16), Image.Resampling.NEAREST)
+    if base == "ender_chest":
+        tex = _load_texture_raw("entity/chest/ender")
+        if tex is not None:
+            box = (16, 16, 32, 32) if face_key == "side" else (16, 0, 32, 16)
+            return tex.crop(box).resize((16, 16), Image.Resampling.NEAREST)
+    if base.endswith("_shulker_box") or base == "shulker_box":
+        tex = _load_texture("block/" + base)
+        if tex is not None:
+            return tex
     return None
 
 

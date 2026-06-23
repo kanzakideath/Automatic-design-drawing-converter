@@ -640,11 +640,11 @@ class GpuPreviewWindow:
                                      or (buttons & mouse.LEFT and mods & key.MOD_SHIFT)):
             self._pan_orbit(dx, dy)
         elif buttons & mouse.LEFT:
-            self.yaw += dx * 0.15
-            self.pitch = max(-12.0, min(78.0, self.pitch - dy * 0.10))
+            self.yaw += dx * 0.10
+            self.pitch = max(-12.0, min(78.0, self.pitch - dy * 0.07))
 
     def on_mouse_scroll(self, _x, _y, _sx, sy):
-        self.zoom = max(0.18, min(8.0, self.zoom * (1.06 ** sy)))
+        self.zoom = max(0.18, min(8.0, self.zoom * (1.04 ** sy)))
 
     def on_key_press(self, symbol, _mods):
         key = self.pyglet.window.key

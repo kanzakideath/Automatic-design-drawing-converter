@@ -1,7 +1,7 @@
 {
-  "version": "1.4.1",
-  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.4.1/SchematicMaterialConverter.exe",
-  "sha256": "d25262ab00f31eada74a11f03f4abc3a19e6f7aa67695d26646becf9387330e1",
-  "notes": "Add a dedicated Preview Studio sidebar and speed up preview work. The normal preview now renders lighter, GPU preview data and meshes are warmed in the background, repeated GPU preview opens use a cache, and the OpenGL window runs in uncapped high-FPS mode with the heavy overlay hidden by default.",
+  "version": "1.4.2",
+  "url": "https://github.com/kanzakideath/Automatic-design-drawing-converter/releases/download/v1.4.2/SchematicMaterialConverter.exe",
+  "sha256": "2a91368291d6d5d99bbb22ae273eb9f5efb61c0755922e2587688f864fb2bd3b",
+  "notes": "Improve preview fidelity and usability. The main preview now uses a larger real-texture block budget, shows a cleaner preview-first UI, uses gentler rotate/zoom controls, and adds explicit texture mapping for common utility blocks such as chests, barrels, crafting tables, furnaces, hoppers, observers, scaffolding, pistons, and shulker boxes.",
   "mandatory": false
 }
