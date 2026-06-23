@@ -35,12 +35,12 @@ except Exception:
 APP_TITLE = '設計図自動素材変換ツール'
 KEEP = '__keep__'
 GPU_PREVIEW_BLOCK_LIMIT = 220000
-GPU_PREVIEW_FACE_LIMIT = 180000
-CPU_PREVIEW_IDLE_BLOCK_LIMIT = 1400
-CPU_PREVIEW_IDLE_FACE_LIMIT = 1800
-CPU_PREVIEW_TEXTURE_FACE_LIMIT = 520
-CPU_PREVIEW_DRAG_BLOCK_LIMIT = 48
-CPU_PREVIEW_DRAG_FACE_LIMIT = 72
+GPU_PREVIEW_FACE_LIMIT = 120000
+CPU_PREVIEW_IDLE_BLOCK_LIMIT = 1050
+CPU_PREVIEW_IDLE_FACE_LIMIT = 1350
+CPU_PREVIEW_TEXTURE_FACE_LIMIT = 360
+CPU_PREVIEW_DRAG_BLOCK_LIMIT = 42
+CPU_PREVIEW_DRAG_FACE_LIMIT = 60
 
 CATEGORY_LABELS = [
     ('recommended', 'おすすめ（同じ形）'),
@@ -394,15 +394,15 @@ class InteractivePreview(tk.Canvas):
             rw = max(220, int(w * render_scale))
             rh = max(135, int(h * render_scale))
             if self._drag:
-                max_blocks = CPU_PREVIEW_DRAG_BLOCK_LIMIT if large else max(420, int(CPU_PREVIEW_DRAG_BLOCK_LIMIT * 0.55))
-                face_limit = CPU_PREVIEW_DRAG_FACE_LIMIT if large else max(160, int(CPU_PREVIEW_DRAG_FACE_LIMIT * 0.55))
+                max_blocks = CPU_PREVIEW_DRAG_BLOCK_LIMIT if large else max(32, int(CPU_PREVIEW_DRAG_BLOCK_LIMIT * 0.85))
+                face_limit = CPU_PREVIEW_DRAG_FACE_LIMIT if large else max(48, int(CPU_PREVIEW_DRAG_FACE_LIMIT * 0.85))
                 texture_limit = 0
             else:
-                max_blocks = CPU_PREVIEW_IDLE_BLOCK_LIMIT if large else max(3600, int(CPU_PREVIEW_IDLE_BLOCK_LIMIT * 0.65))
-                face_limit = CPU_PREVIEW_IDLE_FACE_LIMIT if large else max(1200, int(CPU_PREVIEW_IDLE_FACE_LIMIT * 0.65))
+                max_blocks = CPU_PREVIEW_IDLE_BLOCK_LIMIT if large else max(640, int(CPU_PREVIEW_IDLE_BLOCK_LIMIT * 0.72))
+                face_limit = CPU_PREVIEW_IDLE_FACE_LIMIT if large else max(820, int(CPU_PREVIEW_IDLE_FACE_LIMIT * 0.72))
                 texture_limit = min(
                     face_limit,
-                    CPU_PREVIEW_TEXTURE_FACE_LIMIT if large else max(120, int(CPU_PREVIEW_TEXTURE_FACE_LIMIT * 0.65))
+                    CPU_PREVIEW_TEXTURE_FACE_LIMIT if large else max(160, int(CPU_PREVIEW_TEXTURE_FACE_LIMIT * 0.72))
                 )
             state = self.view_state()
             cache_key = None if self._drag else (
@@ -530,6 +530,8 @@ class DashboardApp:
         self._gpu_payload_cache = None
         self._gpu_payload_building = False
         self._gpu_warmup_after_id = None
+        self._gpu_open_when_ready = False
+        self._focus_surface_building = False
         self._regid2file = {}
         self.active_filter = 'all'
         self.preview_tab = 'overview'
@@ -847,9 +849,7 @@ class DashboardApp:
             self._button(row, '実行', cmd, bg=UI['ACCENT'], fg='white', padx=12, pady=5).pack(side='right', padx=10)
 
     def open_full_preview(self):
-        if self._open_gpu_preview():
-            return
-        self._open_cpu_full_preview()
+        self._open_gpu_preview()
 
     def _open_gpu_preview(self):
         if self.loaded_nbt is None:
@@ -858,25 +858,31 @@ class DashboardApp:
         try:
             import gpu_preview
         except Exception as exc:
-            messagebox.showwarning(APP_TITLE, 'GPUプレビューを起動できませんでした。\nCPUプレビューに切り替えます。\n\n%s' % exc)
-            return False
+            messagebox.showwarning(APP_TITLE, 'GPUプレビューを起動できませんでした。\n\n%s' % exc)
+            return True
         try:
             token = self._preview_cache_token()
-            if (self._gpu_payload_building and
-                    not (self._gpu_payload_cache_token == token and self._gpu_payload_cache is not None)):
-                self._sync_progress(text='進行状況: GPUプレビューを準備中です...')
-                self.root.after(280, self.open_full_preview)
+            if not (self._gpu_payload_cache_token == token and self._gpu_payload_cache is not None):
+                self._gpu_open_when_ready = True
+                self._sync_progress(text='進行状況: GPUプレビューをバックグラウンドで準備中です...')
+                self._schedule_gpu_preview_warmup(open_when_ready=True)
                 return True
-            payload = self._gpu_preview_payload()
-            if not payload.get('blocks'):
-                messagebox.showinfo(APP_TITLE, 'プレビューできるブロックが見つかりませんでした。')
-                return True
-            gpu_preview.open_preview_async(payload)
-            self._sync_progress(text='進行状況: GPUプレビューを起動しました')
+            self._open_ready_gpu_payload(gpu_preview)
             return True
         except Exception as exc:
-            messagebox.showwarning(APP_TITLE, 'GPUプレビューの準備に失敗しました。\nCPUプレビューに切り替えます。\n\n%s' % exc)
+            messagebox.showwarning(APP_TITLE, 'GPUプレビューの準備に失敗しました。\n\n%s' % exc)
+            return True
+
+    def _open_ready_gpu_payload(self, gpu_preview_module=None):
+        payload = self._gpu_payload_cache
+        if not payload or not payload.get('blocks'):
+            messagebox.showinfo(APP_TITLE, 'プレビューできるブロックが見つかりませんでした。')
             return False
+        if gpu_preview_module is None:
+            import gpu_preview as gpu_preview_module
+        gpu_preview_module.open_preview_async(payload)
+        self._sync_progress(text='進行状況: GPUプレビューを起動しました')
+        return True
 
     def _open_cpu_full_preview(self):
         top, body = self._dialog('Minecraft風プレビュー', 1180, 760)
@@ -1792,6 +1798,8 @@ class DashboardApp:
         self._target_map_cache = {}
         self._gpu_payload_cache_token = None
         self._gpu_payload_cache = None
+        self._gpu_open_when_ready = False
+        self._focus_surface_building = False
         self.focus_mode = True
         for widget in self.header.winfo_children():
             widget.destroy()
@@ -2310,6 +2318,7 @@ class DashboardApp:
         self._target_map_cache = {}
         self._gpu_payload_cache_token = None
         self._gpu_payload_cache = None
+        self._gpu_open_when_ready = False
         if hasattr(self, 'save_state'):
             self.save_state.configure(text='● 未保存の変更があります', fg=UI['ORANGE'])
 
@@ -2742,7 +2751,7 @@ class DashboardApp:
         except tk.TclError:
             pass
         try:
-            self._gpu_warmup_after_id = self.root.after(650, self._run_queued_gpu_preview_warmup)
+            self._gpu_warmup_after_id = self.root.after(2800, self._run_queued_gpu_preview_warmup)
         except tk.TclError:
             self._gpu_warmup_after_id = None
 
@@ -2750,15 +2759,53 @@ class DashboardApp:
         self._gpu_warmup_after_id = None
         self._schedule_gpu_preview_warmup()
 
-    def _schedule_gpu_preview_warmup(self):
+    def _queue_focus_surface_warmup(self):
+        if self.loaded_nbt is None or self._focus_surface_building:
+            return
+        expected_id = id(self.loaded_nbt)
+        self._focus_surface_building = True
+
+        def worker():
+            try:
+                self._source_surface_records(max_blocks=10 ** 9)
+            except Exception:
+                pass
+            finally:
+                self._focus_surface_building = False
+            if id(self.loaded_nbt) == expected_id:
+                self._safe_after(self._finish_focus_surface_warmup)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_focus_surface_warmup(self):
+        if self.loaded_nbt is None:
+            return
+        current_id = id(self.loaded_nbt)
+        for key in list(self._preview_source_cache.keys()):
+            if (isinstance(key, tuple) and len(key) >= 2 and key[0] == current_id
+                    and key[1] in ('focused_source_records', 'focused_ranked_records')):
+                self._preview_source_cache.pop(key, None)
+        if hasattr(self, 'preview_view'):
+            self.preview_view.refresh()
+        self._sync_progress(text='進行状況: 高密度プレビュー準備完了')
+
+    def _schedule_gpu_preview_warmup(self, open_when_ready=False):
         if self.loaded_nbt is None or self._gpu_payload_building:
+            if open_when_ready:
+                self._gpu_open_when_ready = True
             return
         token = self._preview_cache_token()
         if self._gpu_payload_cache_token == token and self._gpu_payload_cache is not None:
+            if open_when_ready:
+                self._gpu_open_when_ready = False
+                self._safe_after(self._open_ready_gpu_payload)
             return
+        if open_when_ready:
+            self._gpu_open_when_ready = True
         self._gpu_payload_building = True
 
         def worker(expected_token):
+            error = None
             try:
                 payload = self._gpu_preview_payload()
                 if payload.get('blocks') and 'prebuilt_mesh' not in payload:
@@ -2768,14 +2815,31 @@ class DashboardApp:
                     except Exception:
                         pass
                 ok = bool(payload.get('blocks')) and self._preview_cache_token() == expected_token
-            except Exception:
+            except Exception as exc:
+                error = exc
                 ok = False
             finally:
                 self._gpu_payload_building = False
-            if ok:
-                self._safe_after(lambda: self._sync_progress(text='進行状況: GPUプレビュー準備完了'))
+            if self.loaded_nbt is not None:
+                self._safe_after(lambda ok=ok, error=error: self._finish_gpu_preview_warmup(ok, error))
 
         threading.Thread(target=worker, args=(token,), daemon=True).start()
+
+    def _finish_gpu_preview_warmup(self, ok, error=None):
+        want_open = self._gpu_open_when_ready
+        if ok:
+            self._sync_progress(text='進行状況: GPUプレビュー準備完了')
+            if want_open:
+                self._gpu_open_when_ready = False
+                try:
+                    self._open_ready_gpu_payload()
+                except Exception as exc:
+                    messagebox.showwarning(APP_TITLE, 'GPUプレビューの起動に失敗しました。\n\n%s' % exc)
+            return
+        self._gpu_open_when_ready = False
+        self._sync_progress(text='進行状況: GPUプレビュー準備に失敗しました')
+        if want_open:
+            messagebox.showwarning(APP_TITLE, 'GPUプレビューの準備に失敗しました。\n\n%s' % (error or 'unknown error'))
 
     def _gpu_preview_payload(self):
         token = self._preview_cache_token()
@@ -2908,9 +2972,9 @@ class DashboardApp:
         key = ('loaded', w, h, self.src_path, icons.minecraft_assets_label())
         if key in self.image_cache:
             return self.image_cache[key]
-        im = self._render_schematic_preview(w, h, max_blocks=1600, fast=True,
-                                            face_limit_override=1600, texture_limit=1600,
-                                            min_face_px=1.4, focus_view=True)
+        im = self._render_schematic_preview(w, h, max_blocks=720, fast=True,
+                                            face_limit_override=820, texture_limit=220,
+                                            min_face_px=1.8, focus_view=True)
         img = ImageTk.PhotoImage(im)
         self.image_cache[key] = img
         return img
@@ -2920,9 +2984,9 @@ class DashboardApp:
                icons.minecraft_assets_label())
         if key in self.image_cache:
             return self.image_cache[key]
-        im = self._render_schematic_preview(w, h, max_blocks=1800, fast=True,
-                                            face_limit_override=1800, texture_limit=1800,
-                                            min_face_px=1.4, focus_view=True)
+        im = self._render_schematic_preview(w, h, max_blocks=900, fast=True,
+                                            face_limit_override=1050, texture_limit=260,
+                                            min_face_px=1.8, focus_view=True)
         img = ImageTk.PhotoImage(im)
         self.image_cache[key] = img
         return img
@@ -2981,10 +3045,21 @@ class DashboardApp:
 
     def _focused_render_records(self, max_blocks=5600):
         max_blocks = max(100, int(max_blocks or 5600))
-        if max_blocks <= 1200:
-            source_limit = max(8000, int(max_blocks * 10))
+        try:
+            total_blocks = int(self.loaded_nbt.get('Metadata', {}).get('TotalBlocks', 0)) if self.loaded_nbt else 0
+        except Exception:
+            total_blocks = 0
+        if max_blocks <= 6000 and 0 < total_blocks <= 220000:
+            full_surface_key = (id(self.loaded_nbt), 'surface_records', 10 ** 9)
+            if full_surface_key in self._preview_source_cache:
+                source_limit = 10 ** 9
+            else:
+                self._queue_focus_surface_warmup()
+                source_limit = max(4200, int(max_blocks * 5))
+        elif max_blocks <= 1200:
+            source_limit = max(3600, int(max_blocks * 5))
         elif max_blocks <= 6000:
-            source_limit = max(18000, int(max_blocks * 12))
+            source_limit = max(8000, int(max_blocks * 6))
         else:
             source_limit = min(180000, max_blocks)
         raw_records = self._source_surface_records(max_blocks=source_limit)
@@ -3001,6 +3076,16 @@ class DashboardApp:
     def _choose_contiguous_preview_records(self, records, max_blocks):
         if len(records) <= max_blocks:
             return list(records)
+        ranked = self._rank_contiguous_preview_records(records)
+        focused = ranked[:max_blocks]
+        focused.sort(key=lambda rec: (int(rec[1]), int(rec[2]), int(rec[0])))
+        return focused
+
+    def _rank_contiguous_preview_records(self, records):
+        rank_key = (id(self.loaded_nbt), 'focused_ranked_records', id(records), len(records))
+        cached = self._preview_source_cache.get(rank_key)
+        if cached is not None:
+            return cached
         bounds = self._record_bounds(records)
         span = max(bounds['span_x'], bounds['span_z'])
         cell = max(8, min(32, int(span / 12)))
@@ -3010,7 +3095,9 @@ class DashboardApp:
             key = (int(math.floor(float(x) / cell)), int(math.floor(float(z) / cell)))
             buckets[key] = buckets.get(key, 0) + 1
         if not buckets:
-            return list(records[:max_blocks])
+            ranked = list(records)
+            self._preview_source_cache[rank_key] = ranked
+            return ranked
         bx, bz = max(buckets.items(), key=lambda item: item[1])[0]
         cx = (bx + 0.5) * cell
         cz = (bz + 0.5) * cell
@@ -3022,9 +3109,8 @@ class DashboardApp:
                 float(rec[1]),
             )
         )
-        focused = ranked[:max_blocks]
-        focused.sort(key=lambda rec: (int(rec[1]), int(rec[2]), int(rec[0])))
-        return focused
+        self._preview_source_cache[rank_key] = ranked
+        return ranked
 
     def _source_surface_records(self, max_blocks=60000):
         if self.loaded_nbt is None:

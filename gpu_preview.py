@@ -382,6 +382,14 @@ class GpuPreviewWindow:
             kwargs['config'] = config
         self.window = pyglet.window.Window(**kwargs)
         try:
+            screen = self.window.display.get_default_screen()
+            self.window.set_location(
+                int(screen.x + (screen.width - width) / 2),
+                int(screen.y + (screen.height - height) / 2),
+            )
+        except Exception:
+            pass
+        try:
             self.window.set_vsync(False)
         except Exception:
             pass
