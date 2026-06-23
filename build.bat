@@ -16,7 +16,7 @@ if errorlevel 1 (
 
 echo [2/3] PyInstaller で exe を作成します...
 rem PyInstaller には ASCII 名を渡し、後で日本語名にリネームする（文字化け回避）
-python -m PyInstaller --noconfirm --clean --onefile --windowed ^
+python -m PyInstaller --noconfirm --clean --noupx --onefile --windowed ^
     --name SchematicMaterialConverter ^
     --collect-all tkinterdnd2 ^
     --collect-all pyglet ^

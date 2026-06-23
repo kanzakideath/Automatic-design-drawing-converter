@@ -18,7 +18,7 @@ import urllib.error
 import urllib.request
 
 
-APP_VERSION = "1.4.6"
+APP_VERSION = "1.4.7"
 MANIFEST_URL_FILE = "update_manifest_url.txt"
 DEFAULT_UPDATE_SOURCE = "https://api.github.com/repos/kanzakideath/Automatic-design-drawing-converter/releases/latest"
 GITHUB_REPO_RE = re.compile(r"^https://github\.com/([^/]+)/([^/#?]+?)(?:\.git)?/?(?:[#?].*)?$", re.I)
@@ -208,6 +208,14 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _validate_executable(path: Path) -> None:
+    if not path.exists() or path.stat().st_size < 10 * 1024 * 1024:
+        raise ValueError("更新ファイルが不完全です。もう一度更新してください。")
+    with path.open("rb") as handle:
+        if handle.read(2) != b"MZ":
+            raise ValueError("更新ファイルがEXEではありません。もう一度更新してください。")
+
+
 def download_update(info: UpdateInfo, progress=None) -> Path:
     suffix = Path(urlparse(info.url).path).suffix or ".exe"
     fd, temp_name = tempfile.mkstemp(prefix="smc-update-", suffix=suffix)
@@ -225,6 +233,7 @@ def download_update(info: UpdateInfo, progress=None) -> Path:
             done += len(chunk)
             if progress and total:
                 progress(done / total)
+    _validate_executable(out)
     if info.sha256 and _sha256(out).lower() != info.sha256:
         try:
             out.unlink()
@@ -234,22 +243,53 @@ def download_update(info: UpdateInfo, progress=None) -> Path:
     return out
 
 
-def schedule_replace_and_restart(new_exe: Path) -> None:
+def _ps_literal(value) -> str:
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def schedule_replace_and_restart(new_exe: Path, expected_sha256: str = "") -> None:
     current = current_executable()
     if current.suffix.lower() != ".exe":
         raise RuntimeError("開発実行中は自動置き換えできません。")
+    new_exe = Path(new_exe)
+    expected_sha256 = (expected_sha256 or "").strip().lower()
+    _validate_executable(new_exe)
     script = Path(tempfile.gettempdir()) / ("smc-apply-update-%s.ps1" % os.getpid())
     ps = f"""
 $ErrorActionPreference = "Stop"
 $PidToWait = {os.getpid()}
-$NewExe = "{str(new_exe)}"
-$CurrentExe = "{str(current)}"
+$NewExe = {_ps_literal(new_exe)}
+$CurrentExe = {_ps_literal(current)}
+$ExpectedSha256 = {_ps_literal(expected_sha256)}
 try {{
   Wait-Process -Id $PidToWait -Timeout 60 -ErrorAction SilentlyContinue
 }} catch {{}}
-Start-Sleep -Milliseconds 700
+Start-Sleep -Milliseconds 1200
+if (-not (Test-Path -LiteralPath $NewExe)) {{
+  throw "Downloaded update file does not exist."
+}}
+$item = Get-Item -LiteralPath $NewExe
+if ($item.Length -lt 10485760) {{
+  throw "Downloaded update file is incomplete."
+}}
+if ($ExpectedSha256) {{
+  $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $NewExe).Hash.ToLowerInvariant()
+  if ($hash -ne $ExpectedSha256) {{
+    throw "Downloaded update hash mismatch."
+  }}
+}}
 Copy-Item -LiteralPath $NewExe -Destination $CurrentExe -Force
+if (-not (Test-Path -LiteralPath $CurrentExe)) {{
+  throw "Updated executable was not written."
+}}
+if ($ExpectedSha256) {{
+  $currentHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $CurrentExe).Hash.ToLowerInvariant()
+  if ($currentHash -ne $ExpectedSha256) {{
+    throw "Updated executable hash mismatch."
+  }}
+}}
 Remove-Item -LiteralPath $NewExe -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 1200
 Start-Process -FilePath $CurrentExe -WorkingDirectory (Split-Path -Parent $CurrentExe)
 Start-Sleep -Milliseconds 500
 Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue

@@ -8,6 +8,7 @@ import random
 import csv
 import ctypes
 import threading
+import time
 import tkinter as tk
 from tkinter import font as tkfont
 from tkinter import filedialog, messagebox, ttk
@@ -242,6 +243,7 @@ class InteractivePreview(tk.Canvas):
         self._gpu_handle = None
         self._gpu_token = None
         self._gpu_starting = False
+        self._gpu_start_time = 0.0
         self._gpu_error = None
         self._gpu_recover_after_id = None
         self.bind('<Configure>', lambda _e: self.refresh())
@@ -278,6 +280,7 @@ class InteractivePreview(tk.Canvas):
         handle = self._gpu_handle
         self._gpu_handle = None
         self._gpu_starting = False
+        self._gpu_start_time = 0.0
         if handle is not None:
             try:
                 handle.close(wait=wait)
@@ -434,12 +437,18 @@ class InteractivePreview(tk.Canvas):
                 self._raise_gpu_view()
                 return True
             if self._gpu_starting and self._gpu_token == token:
-                self._draw_loading(w, h)
-                return True
+                if time.monotonic() - self._gpu_start_time > 12.0:
+                    self.close_gpu(wait=False)
+                    self._gpu_token = None
+                else:
+                    self._draw_loading(w, h)
+                    self.after(220, lambda: self.refresh(immediate=True))
+                    return True
 
             self.close_gpu(wait=False)
             self._gpu_token = token
             self._gpu_starting = True
+            self._gpu_start_time = time.monotonic()
             self._gpu_error = None
             self._draw_loading(w, h)
             try:
@@ -484,6 +493,7 @@ class InteractivePreview(tk.Canvas):
 
     def _finish_gpu_embed(self, expected_token, parent_hwnd, width, height, payload, error):
         self._gpu_starting = False
+        self._gpu_start_time = 0.0
         try:
             if not self.winfo_exists() or self.app.loaded_nbt is None:
                 return
@@ -1340,7 +1350,7 @@ class DashboardApp:
         def worker():
             try:
                 path = updater.download_update(info, progress)
-                updater.schedule_replace_and_restart(path)
+                updater.schedule_replace_and_restart(path, info.sha256)
             except Exception as exc:
                 self._safe_after(lambda e=exc: self._update_failed(e))
                 return
@@ -2307,9 +2317,10 @@ class DashboardApp:
     def _refresh_preview_only(self):
         self.image_cache = {}
         if hasattr(self, 'preview_view'):
-            self.preview_view.refresh()
+            self.preview_view.refresh(immediate=True)
         if hasattr(self, 'preview_body'):
             self._build_preview_body()
+        self._schedule_gpu_preview_warmup()
         self._queue_gpu_preview_warmup()
 
     # ---------------------------------------------------------------- preview
@@ -2508,7 +2519,16 @@ class DashboardApp:
         self._target_map_cache = {}
         self._gpu_payload_cache_token = None
         self._gpu_payload_cache = None
+        self._gpu_payload_building = False
         self._gpu_open_when_ready = False
+        if hasattr(self, 'preview_view'):
+            try:
+                self.preview_view.close_gpu(wait=False)
+                self.preview_view._gpu_token = None
+                self.preview_view._last_render_key = None
+                self.preview_view._last_render_image = None
+            except Exception:
+                pass
         if hasattr(self, 'save_state'):
             self.save_state.configure(text='● 未保存の変更があります', fg=UI['ORANGE'])
 
