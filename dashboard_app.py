@@ -83,6 +83,428 @@ UI = {
     'WARNING_BG': '#2f2512', 'SUCCESS_BG': '#10291d', 'DROP_BG': '#0d1724',
 }
 UI_FONT_BOOST = 2
+LANGUAGE_LABELS = {'ja': '日本語', 'en': 'English'}
+LANGUAGE_BY_LABEL = {v: k for k, v in LANGUAGE_LABELS.items()}
+CURRENT_LANGUAGE = 'ja'
+
+EN_TRANSLATIONS = {
+    APP_TITLE: 'Automatic Schematic Material Converter',
+    '設計図自動素材変換ツール': 'Automatic Schematic Material Converter',
+    '設計図素材変換ツール': 'Schematic Material Converter',
+    '設計図を読み込み、素材を自動で変換・最適化します': 'Load schematics and automatically convert or optimize materials',
+    'ワークフロー': 'Workflow',
+    '設計図': 'Blueprint',
+    'ルール': 'Rules',
+    'プレビュー': 'Preview',
+    '履歴': 'History',
+    '設定': 'Settings',
+    'ヘルプ': 'Help',
+    'メニューを\n閉じる': 'Collapse\nmenu',
+    '≪\nメニューを\n閉じる': '<<\nCollapse\nmenu',
+    'Studio Build 情報': 'Studio Build Info',
+    'ビルド種別': 'Build type',
+    'ローカル配布ビルド': 'Local distribution build',
+    'アプリバージョン': 'App version',
+    '読み込み中の設計図': 'Loaded blueprint',
+    '対象レジストリ': 'Target registry',
+    '変換ルール数': 'Conversion rules',
+    'ユニークブロック数': 'Unique block count',
+    '最終出力': 'Last output',
+    'アプリのフォルダを開く': 'Open app folder',
+    'dist を開く': 'Open dist',
+    'まだ設計図が読み込まれていません。': 'No blueprint has been loaded yet.',
+    'ファイル': 'File',
+    '形式': 'Format',
+    'サイズ': 'Size',
+    '範囲': 'Bounds',
+    'ブロック総数': 'Total blocks',
+    '別の設計図を読み込む': 'Load another blueprint',
+    '設計図フォルダを開く': 'Open blueprint folder',
+    '読み込みを解除': 'Clear loaded blueprint',
+    'ルール管理': 'Rule Manager',
+    'プリセット管理': 'Preset Manager',
+    'プリセット、未設定ブロック、未使用ルールをまとめて管理します。': 'Manage presets, unset blocks, and unused rules in one place.',
+    '現在のルールセットを保存し、いつでも再利用できます。': 'Save the current rule set and reuse it later.',
+    '自動マッピング': 'Auto Mapping',
+    '素材の種類を保ったまま入手しやすいブロックへ割り当てます。': 'Assign easier-to-obtain blocks while keeping material types.',
+    '建築向け': 'Architecture',
+    'ガラスや石材を見やすい現代的な構成に寄せます。': 'Use clean modern glass and stone choices.',
+    '装飾保持': 'Keep Decoration',
+    '装飾ブロックはそのままにして主要素材だけ変換します。': 'Keep decorative blocks and convert only major materials.',
+    'すべて保持': 'Keep All',
+    '全ブロックを変換しない設定にします。': 'Keep every block unchanged.',
+    '未使用ルール削除': 'Remove Unused Rules',
+    '現在の設計図に存在しない保存済みルールを削除します。': 'Remove saved rules not used by the current blueprint.',
+    '手動ルール追加': 'Add Manual Rule',
+    '一覧の先頭ブロックから変換先ピッカーを開きます。': 'Open the target picker from the first block in the list.',
+    'プロジェクトJSONとして保存': 'Save as Project JSON',
+    '読み込み元、対象バージョン、手動ルール、メモを保存します。': 'Save source path, target version, manual rules, and notes.',
+    '自動マッピングを適用': 'Apply Auto Mapping',
+    '初期推奨ルールに戻します。': 'Restore the recommended default rules.',
+    '建築向けプリセットを適用': 'Apply Architecture Preset',
+    '建築プレビューで見やすい素材へ寄せます。': 'Choose materials that read well in architecture previews.',
+    '装飾ブロック最適化を適用': 'Apply Decoration Optimization',
+    '装飾は保持しつつ素材ブロックを整理します。': 'Keep decoration while cleaning up material blocks.',
+    '実行': 'Run',
+    'Minecraft風プレビュー': 'Minecraft-style Preview',
+    '外観': 'Orbit',
+    '内部視点': 'Walk View',
+    'リセット': 'Reset',
+    'PNGとして保存': 'Save as PNG',
+    '建材リストPNG': 'Materials PNG',
+    'CSVを書き出し': 'Export CSV',
+    '閉じる': 'Close',
+    '対象バージョンレジストリ': 'Target version registry',
+    'このレジストリを適用': 'Apply this registry',
+    '表示': 'Display',
+    '表示言語': 'Display language',
+    '言語を適用': 'Apply language',
+    'フォーカス表示を切り替え': 'Toggle focus layout',
+    'プレビューキャッシュをクリア': 'Clear preview cache',
+    '素材変換ルールを開く': 'Open material rules',
+    '大きいプレビューで確認': 'Open large preview',
+    'Minecraftテクスチャ: ': 'Minecraft textures: ',
+    '未検出（内蔵の軽量表示を使用）': 'Not detected (using built-in lightweight rendering)',
+    '更新': 'Updates',
+    'ネット更新を今すぐ確認': 'Check for online updates now',
+    '更新URL設定ファイルを作成': 'Create update URL settings file',
+    '出力メニュー': 'Export Menu',
+    'プレビューPNGを書き出し': 'Export Preview PNG',
+    '現在の変換設定を反映したMinecraft風プレビュー画像を保存します。': 'Save a Minecraft-style preview using the current conversion settings.',
+    '建材リストPNGを書き出し': 'Export Materials List PNG',
+    '必要な建材と変換先をアイコン付きの画像で保存します。': 'Save required materials and targets as an icon image.',
+    'マッピングCSVを書き出し': 'Export Mapping CSV',
+    'ブロックごとの変換先と状態をCSVで保存します。': 'Save each block target and status as CSV.',
+    'プロジェクトJSONを保存': 'Save Project JSON',
+    '現在のルールとメモを保存します。': 'Save current rules and notes.',
+    '出力フォルダを開く': 'Open output folder',
+    '最後に変換したファイルのフォルダを開きます。': 'Open the folder of the last converted file.',
+    '概要をコピー': 'Copy summary',
+    '変換概要をクリップボードへコピーします。': 'Copy the conversion summary to the clipboard.',
+    '検証: ': 'Validation: ',
+    '問題は見つかりませんでした。': 'No issues were found.',
+    'フォルダ': 'Folder',
+    'プレビュー画面': 'Preview Screen',
+    '設計図読み込み': 'Load Blueprint',
+    'ファイルを読み込み、ブロックを解析': 'Load file and analyze blocks',
+    'プレビュー確認': 'Preview Check',
+    '変換後の見た目を全画面でも確認': 'Check converted appearance, including fullscreen',
+    '出力・適用': 'Export and Apply',
+    '結果を出力してプロジェクトに適用': 'Export results and apply them to the project',
+    '▣ プロジェクトを保存': 'Save Project',
+    'プレビュースタジオ': 'Preview Studio',
+    '見た目確認を先に行い、必要な時だけ素材を編集します。': 'Check appearance first, then edit materials only when needed.',
+    '実テクスチャでプレビュー中': 'Previewing with real textures',
+    '素材を編集': 'Edit Materials',
+    '操作': 'Controls',
+    '左ドラッグで回転 / 右ドラッグで移動': 'Left-drag to rotate / right-drag to pan',
+    'ホイールで拡大縮小 / ダブルクリックで近景・全体切替': 'Mouse wheel to zoom / double-click to toggle near and full view',
+    '読み込んだ設計図': 'Loaded Blueprint',
+    '正常に読み込み済み': 'Loaded successfully',
+    'ブロック数': 'Blocks',
+    'ユニーク数': 'Unique',
+    'クイックプリセット': 'Quick Presets',
+    '管理': 'Manage',
+    '対象バージョン': 'Target version',
+    'ブロック / 素材マッピング': 'Block / Material Mapping',
+    '✦ 自動マッピング': 'Auto Mapping',
+    '+ ルールを追加': '+ Add Rule',
+    '元のブロック': 'Source block',
+    '変換後の素材': 'Converted material',
+    '方法': 'Method',
+    '状態': 'Status',
+    '未設定を自動割り当て': 'Auto-assign unset',
+    'すべてリセット': 'Reset All',
+    '未使用ルールを削除': 'Delete Unused Rules',
+    '変換結果プレビュー': 'Conversion Preview',
+    '実ブロックプレビュー': 'Real Block Preview',
+    'Minecraftの実テクスチャで高速表示。全画面で詳細を確認できます。': 'Fast preview with Minecraft textures. Open fullscreen for details.',
+    '● リアルタイム更新': 'Live update',
+    '近景': 'Near',
+    '全体': 'Full',
+    '上から': 'Top',
+    '俯瞰': 'Overview',
+    '横': 'Side',
+    '横から': 'Side',
+    '拡大': 'Zoom In',
+    '縮小': 'Zoom Out',
+    '概要': 'Summary',
+    '必要素材': 'Materials',
+    '建材': 'Materials',
+    '統計': 'Stats',
+    '詳細統計': 'Detailed Stats',
+    '競合ルール': 'Conflicting rules',
+    '未設定ブロック': 'Unset blocks',
+    '変換パレット': 'Converted palette',
+    '保持ブロック': 'Kept blocks',
+    'メモ': 'Notes',
+    '総ブロック': 'Total blocks',
+    'ユニーク': 'Unique',
+    '変換ルール': 'Conversion rules',
+    '競合': 'Conflicts',
+    '総ブロック数': 'Total blocks',
+    '変換後のブロック数': 'Converted block count',
+    '変換されるパレット': 'Converted palette',
+    'そのまま維持されるブロック': 'Blocks kept as-is',
+    '置き換えルール数': 'Replacement rules',
+    '競合のあるルール': 'Rules with conflicts',
+    'パレット内ブロック': 'Blocks in palette',
+    '自動候補': 'Auto candidates',
+    '任意変更可能': 'Editable',
+    '有効な置換ルール': 'Active replacement rules',
+    '保持されるブロック': 'Kept blocks',
+    '検証結果': 'Validation Results',
+    '競合するルール': 'Conflicting rules',
+    '未設定のブロック': 'Unset blocks',
+    '非対応ブロック': 'Unsupported blocks',
+    '詳細': 'Details',
+    '確認': 'Check',
+    '✓ 競合なし': 'No conflicts',
+    '未設定': 'Unset',
+    '保持': 'Keep',
+    '置き換え': 'Replace',
+    '適用': 'Applied',
+    '変換しない（そのまま）': 'Do not convert (keep as-is)',
+    ' 変換しない': ' Do not convert',
+    '  ← おすすめ': '  <- Recommended',
+    '置き換え先を選ぶ': 'Choose Replacement',
+    'カテゴリを選ぶか、ID/日本語名で検索して変換先を選択します。': 'Choose a category or search by ID/name to select a replacement.',
+    'カテゴリ': 'Category',
+    '検索': 'Search',
+    'おすすめ（同じ形）': 'Recommended (same shape)',
+    '木材': 'Wood',
+    '石・建材': 'Stone / Building',
+    'ガラス': 'Glass',
+    '色付き': 'Colored',
+    '銅': 'Copper',
+    'レッドストーン': 'Redstone',
+    '機能・作業': 'Utility',
+    '自然・地形': 'Natural / Terrain',
+    '自然': 'Natural',
+    '植物': 'Plants',
+    '光源': 'Light Sources',
+    '鉱石・金属': 'Ore / Metal',
+    '装飾': 'Decoration',
+    'その他': 'Other',
+    '素材': 'Materials',
+    'すべて': 'All',
+    'カスタム': 'Custom',
+    '建材リスト / Materials List': 'Materials List',
+    '建材リスト': 'Materials List',
+    '建材リストは別ウィンドウで表示します。': 'The materials list opens in a separate window.',
+    '右上の保存ボタンからPNGを書き出せます。': 'Use the save button at the top right to export PNG.',
+    '建材リストを開く': 'Open Materials List',
+    '設計図を読み込むと必要建材がここに表示されます。': 'Required materials will appear here after loading a blueprint.',
+    '建材なし': 'No Materials',
+    'そのまま使用': 'Used as-is',
+    '元素材: ': 'Source: ',
+    'プロジェクト設定を保存': 'Save Project Settings',
+    '設計図ファイルを選択': 'Select blueprint file',
+    '変換後のファイルの保存先': 'Save converted file as',
+    'マッピングCSVを書き出し': 'Export Mapping CSV',
+    'Litematica 設計図': 'Litematica Blueprint',
+    'JSON': 'JSON',
+    'PNG': 'PNG',
+    'CSV': 'CSV',
+    '先に設計図を読み込んでください。': 'Load a blueprint first.',
+    '設計図が読み込まれていません。': 'No blueprint is loaded.',
+    'まだ変換結果がありません。': 'There is no converted output yet.',
+    'プレビューできるブロックが見つかりませんでした。': 'No previewable blocks were found.',
+    'ファイルが見つかりません:\n%s': 'File not found:\n%s',
+    'フォルダが見つかりません:\n%s': 'Folder not found:\n%s',
+    'フォルダを開けませんでした:\n%s': 'Could not open the folder:\n%s',
+    '読み込みに失敗しました。\n.litematic 形式ですか？\n\n%s': 'Failed to load the file.\nIs it a .litematic file?\n\n%s',
+    'プレビューを書き出しました:\n%s': 'Preview image exported:\n%s',
+    '建材リスト画像を書き出しました:\n%s': 'Materials list image exported:\n%s',
+    'エクスポートしました:\n%s': 'Exported:\n%s',
+    '元のファイルとは別の名前で保存してください。': 'Save with a different name from the source file.',
+    '変換に失敗しました:\n%s': 'Conversion failed:\n%s',
+    '全画面プレビューを起動できませんでした。\n\n%s': 'Could not start fullscreen preview.\n\n%s',
+    '全画面プレビューの準備に失敗しました。\n\n%s': 'Failed to prepare fullscreen preview.\n\n%s',
+    '全画面プレビューの起動に失敗しました。\n\n%s': 'Failed to start fullscreen preview.\n\n%s',
+    '最新版です。\n現在のバージョン: %s': 'You are on the latest version.\nCurrent version: %s',
+    '更新確認に失敗しました。\nGitHub Release がまだ無い場合もここになります。\n\n%s': 'Update check failed.\nThis can also happen if no GitHub Release exists yet.\n\n%s',
+    '更新に失敗しました:\n%s': 'Update failed:\n%s',
+    '設定ファイルを作成しました:\n%s': 'Settings file created:\n%s',
+    '設計図自動素材変換ツール 概要': 'Automatic Schematic Material Converter Summary',
+    '出力が完了しました。\n\n置き換えた素材: %d 種類\n書き換えたパレット: %d 件\n出力ファイル:\n%s\n\nフォルダを開きますか？': 'Export complete.\n\nReplaced materials: %d\nRewritten palette entries: %d\nOutput file:\n%s\n\nOpen the folder?',
+    '変換する素材が未設定です。\n\n置き換えは行わず、読み込んだ設計図を別名で保存しますか？\n素材を変える場合は、中央の一覧で置き換え先を選ぶか「自動マッピング」を押してください。': 'No material replacements are set.\n\nSave the loaded blueprint under another name without replacing blocks?\nTo change materials, choose replacement targets in the center list or press Auto Mapping.',
+    'プレビュー生成中に失敗しました\n%s': 'Preview generation failed\n%s',
+    '設計図待機中': 'Waiting for blueprint',
+    '.litematic を読み込むとここにプレビューを表示します': 'Load a .litematic file to show the preview here',
+    'プレビュー準備中...': 'Preparing preview...',
+    'GPUプレビュー準備中...': 'Preparing GPU preview...',
+    'プレビューを取得できませんでした': 'Could not get preview',
+    'BlockStates を確認してください。': 'Check BlockStates.',
+    '設計図を読み込むと表示します': 'Load a blueprint to display it',
+    '.litematic をドロップしてください。': 'Drop a .litematic file.',
+    '軽量': 'Light',
+    '高品質': 'High Quality',
+    'ここに .litematic ファイルをドラッグ&ドロップ\nまたはクリックして選択': 'Drag and drop a .litematic file here\nor click to choose one',
+    'ここをクリックして .litematic を選択': 'Click here to choose a .litematic file',
+    '読み込み待ち': 'Waiting for file',
+    '進行状況: 待機中': 'Status: Idle',
+    '進行状況: ファイルを読み込み中...': 'Status: Loading file...',
+    '進行状況: ブロックパレットを解析中...': 'Status: Analyzing block palette...',
+    '進行状況: ルール設定中...': 'Status: Setting rules...',
+    '進行状況: 変換を実行中...': 'Status: Running conversion...',
+    '進行状況: 変換完了': 'Status: Conversion complete',
+    '進行状況: 変換に失敗': 'Status: Conversion failed',
+    '進行状況: 高密度プレビュー準備完了': 'Status: High-density preview ready',
+    '進行状況: 全画面プレビュー準備完了': 'Status: Fullscreen preview ready',
+    '進行状況: 全画面プレビュー準備に失敗しました': 'Status: Fullscreen preview preparation failed',
+    '進行状況: 全画面プレビューを準備中です...': 'Status: Preparing fullscreen preview...',
+    '進行状況: 全画面プレビューを起動しました': 'Status: Fullscreen preview started',
+    '進行状況: プレビューキャッシュをクリアしました': 'Status: Preview cache cleared',
+    '進行状況: 概要をコピーしました': 'Status: Summary copied',
+    '進行状況: レジストリを変更しました': 'Status: Registry changed',
+    '進行状況: 表示言語を変更しました': 'Status: Display language changed',
+    '進行状況: 更新ファイルをダウンロードしています...': 'Status: Downloading update file...',
+    '進行状況: 更新を適用するため再起動します...': 'Status: Restarting to apply update...',
+    '進行状況: ワークフロー表示中': 'Status: Showing workflow',
+    '進行状況: 読み込み失敗': 'Status: Load failed',
+    '● 未保存の変更があります': 'Unsaved changes',
+    '● すべての変更を保存しました': 'All changes saved',
+    '● 更新確認中...': 'Checking for updates...',
+    '● 更新確認失敗': 'Update check failed',
+    '● 更新DL中...': 'Downloading update...',
+    '● 更新失敗': 'Update failed',
+}
+
+EN_REPLACEMENTS = [
+    ('進行状況: ', 'Status: '),
+    ('フォーカス表示', 'focus layout'),
+    ('サイドバー', 'sidebar'),
+    ('縮小', 'collapsed'),
+    ('展開', 'expanded'),
+    ('未保存の変更があります', 'Unsaved changes'),
+    ('すべての変更を保存しました', 'All changes saved'),
+    ('設計図', 'blueprint'),
+    ('変換', 'conversion'),
+    ('ブロック', 'block'),
+    ('素材', 'material'),
+    ('件', 'items'),
+    ('種類', 'types'),
+    ('個', 'items'),
+    ('スタック', 'stacks'),
+    ('シュルカー', 'Shulker'),
+    ('箱分', 'boxes'),
+    ('箱', 'boxes'),
+    ('ほか', 'and'),
+]
+
+
+def _normalize_language(value):
+    value = str(value or '').strip().lower()
+    return 'en' if value in ('en', 'english') else 'ja'
+
+
+def _settings_path():
+    base = os.environ.get('APPDATA') or os.path.expanduser('~')
+    return os.path.join(base, 'SchematicMaterialConverter', 'settings.json')
+
+
+def _load_app_settings():
+    path = _settings_path()
+    try:
+        with open(path, 'r', encoding='utf-8-sig') as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_app_settings(settings):
+    path = _settings_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(settings, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def set_current_language(language):
+    global CURRENT_LANGUAGE
+    CURRENT_LANGUAGE = _normalize_language(language)
+
+
+def translate_text(text, language=None):
+    if text is None:
+        return text
+    lang = _normalize_language(language or CURRENT_LANGUAGE)
+    if lang != 'en':
+        return text
+    text = str(text)
+    if not text:
+        return text
+    translated = EN_TRANSLATIONS.get(text)
+    if translated is not None:
+        return translated
+    if text.startswith('● 最新 v'):
+        return text.replace('● 最新', 'Latest', 1)
+    if text.startswith('● 更新あり v'):
+        return text.replace('● 更新あり', 'Update available', 1)
+    if text.startswith('⚠ ') and '件の競合' in text:
+        return text.replace('件の競合', 'conflicts').replace('⚠ ', 'Warning: ')
+    out = text
+    for src, dst in EN_REPLACEMENTS:
+        out = out.replace(src, dst)
+    return out
+
+
+def _translate_filetypes(filetypes):
+    if not filetypes:
+        return filetypes
+    return [(translate_text(label), pattern) for label, pattern in filetypes]
+
+
+_ORIG_SHOWINFO = messagebox.showinfo
+_ORIG_SHOWWARNING = messagebox.showwarning
+_ORIG_SHOWERROR = messagebox.showerror
+_ORIG_ASKYESNO = messagebox.askyesno
+_ORIG_ASKOPENFILENAME = filedialog.askopenfilename
+_ORIG_ASKSAVEASFILENAME = filedialog.asksaveasfilename
+
+
+def _translated_showinfo(title=None, message=None, **options):
+    return _ORIG_SHOWINFO(translate_text(title), translate_text(message), **options)
+
+
+def _translated_showwarning(title=None, message=None, **options):
+    return _ORIG_SHOWWARNING(translate_text(title), translate_text(message), **options)
+
+
+def _translated_showerror(title=None, message=None, **options):
+    return _ORIG_SHOWERROR(translate_text(title), translate_text(message), **options)
+
+
+def _translated_askyesno(title=None, message=None, **options):
+    return _ORIG_ASKYESNO(translate_text(title), translate_text(message), **options)
+
+
+def _translated_askopenfilename(**options):
+    if 'title' in options:
+        options['title'] = translate_text(options['title'])
+    if 'filetypes' in options:
+        options['filetypes'] = _translate_filetypes(options['filetypes'])
+    return _ORIG_ASKOPENFILENAME(**options)
+
+
+def _translated_asksaveasfilename(**options):
+    if 'title' in options:
+        options['title'] = translate_text(options['title'])
+    if 'filetypes' in options:
+        options['filetypes'] = _translate_filetypes(options['filetypes'])
+    return _ORIG_ASKSAVEASFILENAME(**options)
+
+
+messagebox.showinfo = _translated_showinfo
+messagebox.showwarning = _translated_showwarning
+messagebox.showerror = _translated_showerror
+messagebox.askyesno = _translated_askyesno
+filedialog.askopenfilename = _translated_askopenfilename
+filedialog.asksaveasfilename = _translated_asksaveasfilename
 
 
 def _hex_to_rgb(value):
@@ -109,7 +531,7 @@ class RoundedButton(tk.Canvas):
                  size=9, weight='bold', padx=10, pady=5, state='normal',
                  radius=None, **_kw):
         self.parent_bg = parent.cget('bg') if hasattr(parent, 'cget') else UI['BG']
-        self.text = text
+        self.text = translate_text(text)
         self.command = command
         self.fill = bg or UI['BTN_BG']
         self.hover_fill = active_bg or _mix_hex(self.fill, '#ffffff', 0.10)
@@ -142,7 +564,7 @@ class RoundedButton(tk.Canvas):
         if cnf:
             kw.update(cnf)
         if 'text' in kw:
-            self.text = kw.pop('text')
+            self.text = translate_text(kw.pop('text'))
         if 'bg' in kw:
             self.fill = kw.pop('bg')
             self.hover_fill = _mix_hex(self.fill, '#ffffff', 0.12)
@@ -224,6 +646,24 @@ class RoundedButton(tk.Canvas):
         text_color = self.fg if self.state == 'normal' else UI['MUTED']
         self.create_text(width // 2, height // 2 - 1, text=self.text, fill=text_color,
                          font=self.font, justify='center')
+
+
+class TranslatedLabel(tk.Label):
+    def __init__(self, parent, **kw):
+        if 'text' in kw:
+            kw['text'] = translate_text(kw['text'])
+        super().__init__(parent, **kw)
+
+    def configure(self, cnf=None, **kw):
+        if isinstance(cnf, str):
+            return super().configure(cnf)
+        if cnf:
+            kw.update(cnf)
+        if 'text' in kw:
+            kw['text'] = translate_text(kw['text'])
+        return super().configure(**kw)
+
+    config = configure
 
 
 class InteractivePreview(tk.Canvas):
@@ -628,7 +1068,7 @@ class InteractivePreview(tk.Canvas):
     def _draw_error(self, w, h, exc):
         self.delete('all')
         self.create_rectangle(0, 0, w, h, fill='#101820', outline='#4d79ff')
-        self.create_text(w / 2, h / 2, text='GPU preview failed\n%s' % exc,
+        self.create_text(w / 2, h / 2, text=translate_text('GPU preview failed\n%s' % exc),
                          fill='#ffffff', font=('Yu Gothic UI', 10, 'bold'), justify='center')
 
     def _draw_cpu_fallback(self, w, h, label='GPUプレビュー準備中...'):
@@ -648,7 +1088,7 @@ class InteractivePreview(tk.Canvas):
             self.delete('all')
             self.create_image(0, 0, image=self._photo, anchor='nw')
             self.create_rectangle(10, 10, min(w - 10, 240), 38, fill='#101820', outline='#4d79ff')
-            self.create_text(22, 24, text=label, fill='#ffffff',
+            self.create_text(22, 24, text=translate_text(label), fill='#ffffff',
                              font=('Yu Gothic UI', 9, 'bold'), anchor='w')
         except Exception:
             self._draw_loading(w, h)
@@ -700,21 +1140,21 @@ class InteractivePreview(tk.Canvas):
         except Exception as exc:
             self.delete('all')
             self.create_rectangle(0, 0, w, h, fill='#101820', outline='#4d79ff')
-            self.create_text(w / 2, h / 2, text='プレビュー生成中に失敗しました\n%s' % exc,
+            self.create_text(w / 2, h / 2, text=translate_text('プレビュー生成中に失敗しました\n%s' % exc),
                              fill='#ffffff', font=('Yu Gothic UI', 9), justify='center')
 
     def _draw_waiting(self, w, h):
         self.delete('all')
         self.create_rectangle(0, 0, w, h, fill='#101820', outline='#4d79ff')
-        self.create_text(w / 2, h / 2 - 14, text='設計図待機中', fill='#ffffff',
+        self.create_text(w / 2, h / 2 - 14, text=translate_text('設計図待機中'), fill='#ffffff',
                          font=('Yu Gothic UI', 16, 'bold'))
-        self.create_text(w / 2, h / 2 + 18, text='.litematic を読み込むとここにプレビューを表示します',
+        self.create_text(w / 2, h / 2 + 18, text=translate_text('.litematic を読み込むとここにプレビューを表示します'),
                          fill='#b8c7d8', font=('Yu Gothic UI', 10))
 
     def _draw_loading(self, w, h):
         self.delete('all')
         self.create_rectangle(0, 0, w, h, fill='#101820', outline='#4d79ff')
-        self.create_text(w / 2, h / 2, text='プレビュー準備中...', fill='#ffffff',
+        self.create_text(w / 2, h / 2, text=translate_text('プレビュー準備中...'), fill='#ffffff',
                          font=('Yu Gothic UI', 10, 'bold'))
 
     def _draw_overlay(self, w, h):
@@ -722,7 +1162,8 @@ class InteractivePreview(tk.Canvas):
         zoom_text = '%d%%' % int(self.zoom * 100)
         quality = '軽量' if self._drag else '高品質'
         self.create_rectangle(10, 10, 206, 36, fill='#000000', outline='', stipple='gray50')
-        self.create_text(20, 23, text='%s  %s  %s' % (mode_text, zoom_text, quality), anchor='w',
+        self.create_text(20, 23, text='%s  %s  %s' % (
+            translate_text(mode_text), zoom_text, translate_text(quality)), anchor='w',
                          fill='#ffffff', font=('Yu Gothic UI', 9, 'bold'))
 
 
@@ -789,6 +1230,9 @@ def block_category(bid):
 class DashboardApp:
     def __init__(self, root):
         self.root = root
+        self.app_settings = _load_app_settings()
+        self.language = _normalize_language(self.app_settings.get('language', 'ja'))
+        set_current_language(self.language)
         self.icon_cache = {}
         self.image_cache = {}
         self.src_path = None
@@ -875,6 +1319,49 @@ class DashboardApp:
             self.icon_cache[key] = ImageTk.PhotoImage(icons.render_block_image(key[0], size))
         return self.icon_cache[key]
 
+    def _t(self, text):
+        return translate_text(text, self.language)
+
+    def _is_english(self):
+        return self.language == 'en'
+
+    def _block_name(self, bid):
+        base = bd.strip_ns(bid)
+        return self._english_block_name(base) if self._is_english() else bd.jp_name(base)
+
+    def _category_label(self, key):
+        return self._t(CATEGORY_NAME.get(key, key))
+
+    def _category_key_from_label(self, label):
+        for key, jp_label in CATEGORY_LABELS:
+            if label == jp_label or label == self._t(jp_label):
+                return key
+        return 'recommended'
+
+    def _set_language(self, language, dialog=None):
+        language = _normalize_language(language)
+        if language == self.language:
+            return
+        self.language = language
+        set_current_language(language)
+        self.app_settings['language'] = language
+        _save_app_settings(self.app_settings)
+        self.image_cache = {}
+        self._close_materials_window()
+        if dialog is not None:
+            try:
+                dialog.destroy()
+            except tk.TclError:
+                pass
+        self._dispose_preview_view()
+        self._wheel_target = None
+        for child in self.root.winfo_children():
+            child.destroy()
+        self._build_ui()
+        self._sync_progress(text='進行状況: 表示言語を変更しました')
+        if self.loaded_nbt is not None:
+            self.root.after(220, self._kick_preview_start)
+
     def _default_drop_text(self):
         return ('ここに .litematic ファイルをドラッグ&ドロップ\nまたはクリックして選択'
                 if _HAS_DND else 'ここをクリックして .litematic を選択')
@@ -899,8 +1386,8 @@ class DashboardApp:
                         darkcolor=UI['ACCENT_DK'])
 
     def _label(self, parent, text, size=10, weight='normal', fg=None, bg=None, **kw):
-        return tk.Label(parent, text=text, bg=bg or parent.cget('bg'), fg=fg or UI['TEXT'],
-                        font=('Yu Gothic UI', size + UI_FONT_BOOST, weight), **kw)
+        return TranslatedLabel(parent, text=text, bg=bg or parent.cget('bg'), fg=fg or UI['TEXT'],
+                               font=('Yu Gothic UI', size + UI_FONT_BOOST, weight), **kw)
 
     def _button(self, parent, text, command=None, bg=None, fg=None, size=9, weight='bold',
                 padx=10, pady=5, state='normal', **kw):
@@ -964,7 +1451,7 @@ class DashboardApp:
 
     # --------------------------------------------------------------------- ui
     def _build_ui(self):
-        self.root.title(APP_TITLE)
+        self.root.title(self._t(APP_TITLE))
         self.root.configure(bg=UI['BG'])
         win_w, win_h = self._set_centered_geometry(self.root, 1760, 980)
         self.root.minsize(min(1180, win_w), min(760, win_h))
@@ -1013,7 +1500,7 @@ class DashboardApp:
         fg = '#ffffff' if active else UI['MUTED']
         f = tk.Frame(self.sidebar, bg=UI['SIDEBAR'])
         f.pack(fill='x', padx=8, pady=4)
-        item = RoundedButton(f, text=symbol + '\n' + label,
+        item = RoundedButton(f, text=symbol + '\n' + self._t(label),
                              command=lambda k=key: self.navigate(k),
                              bg=bg, fg=fg, active_bg=UI['HOVER'],
                              size=8, weight='bold' if active else 'normal',
@@ -1042,7 +1529,7 @@ class DashboardApp:
 
     def _dialog(self, title, width=760, height=520, modal=False):
         top = tk.Toplevel(self.root)
-        top.title(title)
+        top.title(self._t(title))
         top.configure(bg=UI['BG'])
         self._set_centered_geometry(top, width, height)
         top.minsize(min(width, 560), min(height, 420))
@@ -1240,7 +1727,7 @@ class DashboardApp:
                          bg=UI['ACCENT'], fg='white').pack(side='right', padx=10)
 
     def open_settings_dialog(self):
-        _top, body = self._dialog('設定', 700, 520)
+        top, body = self._dialog('設定', 700, 560)
         regs = bd.available_registries()
         labels = []
         reg_map = {}
@@ -1248,6 +1735,19 @@ class DashboardApp:
             label = r.get('id', r.get('file', 'registry'))
             labels.append(label)
             reg_map[label] = r['file']
+
+        self._label(body, '表示言語', size=10, weight='bold', bg=UI['BG']).pack(anchor='w')
+        language_row = tk.Frame(body, bg=UI['BG'])
+        language_row.pack(fill='x', pady=(6, 14))
+        language_var = tk.StringVar(value=LANGUAGE_LABELS.get(self.language, LANGUAGE_LABELS['ja']))
+        ttk.Combobox(language_row, textvariable=language_var,
+                     values=[LANGUAGE_LABELS['ja'], LANGUAGE_LABELS['en']],
+                     state='readonly', width=22, font=('Yu Gothic UI', 10),
+                     style='Studio.TCombobox').pack(side='left')
+        self._button(language_row, '言語を適用',
+                     lambda: self._set_language(LANGUAGE_BY_LABEL.get(language_var.get(), 'ja'), dialog=top),
+                     bg=UI['ACCENT'], fg='white').pack(side='left', padx=(10, 0))
+
         self._label(body, '対象バージョンレジストリ', size=10, weight='bold', bg=UI['BG']).pack(anchor='w')
         var = tk.StringVar(value=next((k for k, v in reg_map.items() if v == bd.ACTIVE_FILE),
                                       labels[0] if labels else ''))
@@ -1284,13 +1784,22 @@ class DashboardApp:
 
     def open_help_dialog(self):
         _top, body = self._dialog('ヘルプ', 760, 520)
-        text = (
-            '1. 設計図を読み込むと、パレット内の全ブロックを解析します。\n'
-            '2. 変換先はカテゴリ検索から全アイテムへ変更できます。\n'
-            '3. 右側のプレビューは .litematic の BlockStates を読み、変換後の素材で簡易レンダーします。\n'
-            '4. 変換を実行すると元ファイルは上書きせず、新しい .litematic を生成します。\n'
-            '5. プロジェクト保存はルールJSON、プレビュー出力はPNG、メニューからCSVも出力できます。'
-        )
+        if self._is_english():
+            text = (
+                '1. Load a blueprint to analyze every block in the palette.\n'
+                '2. Replacement targets can be changed from category search across all blocks.\n'
+                '3. The preview reads .litematic BlockStates and renders the converted materials.\n'
+                '4. Conversion never overwrites the source file; it creates a new .litematic file.\n'
+                '5. Project JSON, preview PNG, materials PNG, and mapping CSV exports are available.'
+            )
+        else:
+            text = (
+                '1. 設計図を読み込むと、パレット内の全ブロックを解析します。\n'
+                '2. 変換先はカテゴリ検索から全アイテムへ変更できます。\n'
+                '3. 右側のプレビューは .litematic の BlockStates を読み、変換後の素材で簡易レンダーします。\n'
+                '4. 変換を実行すると元ファイルは上書きせず、新しい .litematic を生成します。\n'
+                '5. プロジェクト保存はルールJSON、プレビュー出力はPNG、メニューからCSVも出力できます。'
+            )
         self._label(body, text, size=10, fg=UI['TEXT_SOFT'], bg=UI['BG'],
                     justify='left', wraplength=680).pack(anchor='w')
 
@@ -1445,11 +1954,20 @@ class DashboardApp:
         if info is None:
             self.check_for_updates_manual()
             return
-        notes = ('\n\n更新内容:\n%s' % info.notes) if info.notes else ''
+        notes = (('\n\nRelease notes:\n%s' if self._is_english() else '\n\n更新内容:\n%s') % info.notes) if info.notes else ''
+        if self._is_english():
+            message = (
+                'A new version is available.\n\nCurrent: %s\nLatest: %s%s\n\n'
+                'Download and update now?\nThe app will restart after updating.'
+            ) % (updater.APP_VERSION, info.version, notes)
+        else:
+            message = (
+                '新しいバージョンがあります。\n\n現在: %s\n最新: %s%s\n\n'
+                '今すぐダウンロードして更新しますか？\n更新後にアプリを再起動します。'
+            ) % (updater.APP_VERSION, info.version, notes)
         ask = messagebox.askyesno(
             APP_TITLE,
-            '新しいバージョンがあります。\n\n現在: %s\n最新: %s%s\n\n今すぐダウンロードして更新しますか？\n更新後にアプリを再起動します。'
-            % (updater.APP_VERSION, info.version, notes))
+            message)
         if ask:
             self.download_and_apply_update(info)
 
@@ -1504,7 +2022,7 @@ class DashboardApp:
         self._label(body, '更新元を変えたい場合だけ、EXEと同じフォルダの update_manifest_url.txt を編集します: %s' % url_file, size=8, fg=UI['MUTED'], bg=UI['BG'],
                     justify='left', wraplength=700).pack(anchor='w', pady=(8, 12))
         self._label(body, 'GitHub Release の作り方:', size=9, weight='bold', bg=UI['BG']).pack(anchor='w')
-        tk.Message(body, text=example, width=690, bg=UI['PANEL_2'], fg=UI['TEXT_SOFT'],
+        tk.Message(body, text=self._t(example), width=690, bg=UI['PANEL_2'], fg=UI['TEXT_SOFT'],
                    font=('Consolas', 9), padx=12, pady=10).pack(fill='x', pady=(4, 12))
         row = self._dialog_button_row(body)
         self._button(row, '設定ファイルを作成', self.create_update_url_file, bg=UI['ACCENT']).pack(side='left', padx=(0, 8))
@@ -1820,7 +2338,7 @@ class DashboardApp:
         hdr.grid(row=0, column=0, sticky='ew')
         for i, (text, w) in enumerate([('元のブロック', 20), ('', 2), ('変換後の素材', 22),
                                        ('方法', 8), ('状態', 7), ('', 3)]):
-            tk.Label(hdr, text=text, bg=UI['PANEL_2'], fg=UI['MUTED'], width=w,
+            TranslatedLabel(hdr, text=text, bg=UI['PANEL_2'], fg=UI['MUTED'], width=w,
                      font=('Yu Gothic UI', 8), anchor='w').grid(row=0, column=i, sticky='ew', padx=4, pady=6)
 
         self.map_canvas = tk.Canvas(table, bg=UI['PANEL'], highlightthickness=0)
@@ -2325,7 +2843,7 @@ class DashboardApp:
 
         top = tk.Toplevel(self.root)
         self.materials_window = top
-        top.title('建材リスト / Materials List')
+        top.title(self._t('建材リスト / Materials List'))
         top.configure(bg=UI['BG'])
         self._set_centered_geometry(top, 980, 720)
         top.minsize(760, 520)
@@ -2505,7 +3023,7 @@ class DashboardApp:
         sl.pack(side='left')
         st = tk.Frame(src, bg=bgc)
         st.pack(side='left', fill='x', expand=True, padx=8)
-        self._label(st, bd.jp_name(conv.source), size=8, bg=bgc, anchor='w',
+        self._label(st, self._block_name(conv.source), size=8, bg=bgc, anchor='w',
                     wraplength=148, justify='left').pack(anchor='w')
         self._label(st, bd.strip_ns(conv.source), size=7, fg=UI['MUTED'], bg=bgc).pack(anchor='w')
 
@@ -2517,12 +3035,15 @@ class DashboardApp:
                                relief='flat', bd=0, anchor='w', justify='left',
                                font=('Yu Gothic UI', 8), cursor='hand2', padx=6, pady=4)
         target_btn.grid(row=0, column=2, sticky='ew', padx=6)
-        method = tk.StringVar(value='保持' if target == KEEP else '置き換え')
-        method_box = ttk.Combobox(row, textvariable=method, values=['置き換え', '保持'],
+        method_values = [self._t('置き換え'), self._t('保持')]
+        method = tk.StringVar(value=self._t('保持') if target == KEEP else self._t('置き換え'))
+        method_box = ttk.Combobox(row, textvariable=method, values=method_values,
                                   state='readonly', width=7, font=('Yu Gothic UI', 8),
                                   style='Studio.TCombobox')
         method_box.grid(row=0, column=3, padx=4)
-        method_box.bind('<<ComboboxSelected>>', lambda _e, c=conv, v=method: self._method_changed(c, v.get()))
+        method_box.bind('<<ComboboxSelected>>',
+                        lambda _e, c=conv, v=method: self._method_changed(
+                            c, '保持' if v.get() == self._t('保持') else '置き換え'))
         self._status_badge(row, conv, target).grid(row=0, column=4, padx=4)
 
         rowdata = {'conv': conv, 'target': target, 'btn': target_btn, 'bg': bgc}
@@ -2537,18 +3058,18 @@ class DashboardApp:
             text, fg, bg = '未設定', UI['ORANGE'], UI['WARNING_BG']
         else:
             text, fg, bg = '適用', UI['GREEN'], UI['SUCCESS_BG']
-        return tk.Label(parent, text=text, bg=bg, fg=fg, width=6,
-                        font=('Yu Gothic UI', 8, 'bold'), padx=3, pady=3)
+        return TranslatedLabel(parent, text=text, bg=bg, fg=fg, width=6,
+                               font=('Yu Gothic UI', 8, 'bold'), padx=3, pady=3)
 
     def _refresh_target(self, rowdata):
         tgt = rowdata['target']
         btn = rowdata['btn']
         if tgt == KEEP:
             icon = self.get_icon(rowdata['conv'].source, 28)
-            btn.configure(image=icon, text=' 変換しない', bg=UI['KEEP_BG'], fg=UI['MUTED'])
+            btn.configure(image=icon, text=self._t(' 変換しない'), bg=UI['KEEP_BG'], fg=UI['MUTED'])
         else:
             icon = self.get_icon(tgt, 28)
-            btn.configure(image=icon, text=' ' + bd.jp_name(tgt), bg=UI['TARGET_BG'], fg=UI['TEXT'])
+            btn.configure(image=icon, text=' ' + self._block_name(tgt), bg=UI['TARGET_BG'], fg=UI['TEXT'])
         btn.image = icon
 
     def _method_changed(self, conv, value):
@@ -2708,21 +3229,24 @@ class DashboardApp:
     def open_picker(self, rowdata):
         conv = rowdata['conv']
         top = tk.Toplevel(self.root)
-        top.title('置き換え先を選ぶ')
+        top.title(self._t('置き換え先を選ぶ'))
         top.configure(bg=UI['BG'])
         self._set_centered_geometry(top, 820, 670)
         top.minsize(660, 520)
         top.transient(self.root)
         top.grab_set()
-        self._label(top, '「%s」の置き換え先' % bd.jp_name(conv.source),
+        title_text = ('Replacement for "%s"' % self._block_name(conv.source)
+                      if self._is_english() else '「%s」の置き換え先' % self._block_name(conv.source))
+        self._label(top, title_text,
                     size=14, weight='bold', bg=UI['BG']).pack(anchor='w', padx=16, pady=(14, 2), fill='x')
         self._label(top, 'カテゴリを選ぶか、ID/日本語名で検索して変換先を選択します。',
                     size=9, fg=UI['MUTED'], bg=UI['BG']).pack(anchor='w', padx=16)
         controls = tk.Frame(top, bg=UI['BG'])
         controls.pack(fill='x', padx=16, pady=(12, 4))
         self._label(controls, 'カテゴリ', size=9, bg=UI['BG']).pack(side='left')
-        cat_var = tk.StringVar(value=CATEGORY_NAME['recommended'])
-        ttk.Combobox(controls, textvariable=cat_var, values=[label for _, label in CATEGORY_LABELS],
+        cat_var = tk.StringVar(value=self._category_label('recommended'))
+        ttk.Combobox(controls, textvariable=cat_var,
+                     values=[self._t(label) for _, label in CATEGORY_LABELS],
                      state='readonly', width=24, font=('Yu Gothic UI', 9),
                      style='Studio.TCombobox').pack(side='left', padx=(6, 16))
         self._label(controls, '検索', size=9, bg=UI['BG']).pack(side='left')
@@ -2759,7 +3283,7 @@ class DashboardApp:
 
         def items_for_selection():
             q = search_var.get().strip().lower()
-            selected = CATEGORY_BY_LABEL.get(cat_var.get(), 'recommended')
+            selected = self._category_key_from_label(cat_var.get())
             if q:
                 pool = all_blocks
             elif selected == 'recommended':
@@ -2788,10 +3312,14 @@ class DashboardApp:
                               lambda: choose(KEEP), keep=True)
             items = items_for_selection()
             for cand in items:
-                title = '%s / %s' % (bd.jp_name(cand), self._english_block_name(cand))
+                title = (self._english_block_name(cand) if self._is_english()
+                         else '%s / %s' % (bd.jp_name(cand), self._english_block_name(cand)))
                 self._picker_item(inner, title, cand, lambda c=cand: choose(c),
                                   recommended=(cand == conv.target))
-            count_lbl.configure(text='表示: %d件 / 全ブロック: %d件' % (len(items), len(all_blocks)))
+            if self._is_english():
+                count_lbl.configure(text='Showing: %d / all blocks: %d' % (len(items), len(all_blocks)))
+            else:
+                count_lbl.configure(text='表示: %d件 / 全ブロック: %d件' % (len(items), len(all_blocks)))
             cv.yview_moveto(0)
 
         for child in controls.winfo_children():
@@ -2811,12 +3339,12 @@ class DashboardApp:
         il.pack(side='left')
         txt = tk.Frame(f, bg=bgc)
         txt.pack(side='left', padx=10, fill='x', expand=True)
-        suffix = '  ← おすすめ' if recommended else ''
-        name_lbl = tk.Label(txt, text=label + suffix, bg=bgc, fg=(UI['MUTED'] if keep else UI['TEXT']),
-                            font=('Yu Gothic UI', 10), anchor='w', justify='left', wraplength=560)
+        suffix = self._t('  ← おすすめ') if recommended else ''
+        name_lbl = TranslatedLabel(txt, text=label + suffix, bg=bgc, fg=(UI['MUTED'] if keep else UI['TEXT']),
+                                   font=('Yu Gothic UI', 10), anchor='w', justify='left', wraplength=560)
         name_lbl.pack(anchor='w', fill='x')
-        id_lbl = tk.Label(txt, text=bd.strip_ns(icon_id), bg=bgc, fg=UI['MUTED'],
-                          font=('Consolas', 8), anchor='w', justify='left', wraplength=560)
+        id_lbl = TranslatedLabel(txt, text=bd.strip_ns(icon_id), bg=bgc, fg=UI['MUTED'],
+                                 font=('Consolas', 8), anchor='w', justify='left', wraplength=560)
         id_lbl.pack(anchor='w', fill='x')
         for w in (f, il, txt, name_lbl, id_lbl):
             w.bind('<Button-1>', lambda _e: cmd())
@@ -2947,14 +3475,18 @@ class DashboardApp:
         for bid, data in grouped.items():
             sources = sorted(data['sources'])
             if len(sources) == 1 and sources[0] == bid:
-                detail = 'そのまま使用'
+                detail = 'Used as-is' if self._is_english() else 'そのまま使用'
             elif len(sources) <= 2:
-                detail = '元素材: ' + ' / '.join(bd.jp_name(s) for s in sources)
+                names = [self._block_name(s) for s in sources]
+                detail = ('Source: ' if self._is_english() else '元素材: ') + ' / '.join(names)
             else:
-                detail = '元素材: %s ほか%d件' % (bd.jp_name(sources[0]), len(sources) - 1)
+                if self._is_english():
+                    detail = 'Source: %s and %d more' % (self._block_name(sources[0]), len(sources) - 1)
+                else:
+                    detail = '元素材: %s ほか%d件' % (self._block_name(sources[0]), len(sources) - 1)
             rows.append({
                 'id': bid,
-                'name': bd.jp_name(bid),
+                'name': self._block_name(bid),
                 'name_en': self._english_block_name(bid),
                 'count': data['count'],
                 'stacks_text': self._stack_text(data['count']),
@@ -2976,6 +3508,13 @@ class DashboardApp:
 
     def _stack_text(self, count):
         stacks, rest = self._stack_parts(count)
+        if self._is_english():
+            if stacks == 0:
+                return '%d item%s' % (rest, '' if rest == 1 else 's')
+            if rest:
+                return '%d stack%s + %d item%s' % (
+                    stacks, '' if stacks == 1 else 's', rest, '' if rest == 1 else 's')
+            return '%d stack%s' % (stacks, '' if stacks == 1 else 's')
         if stacks == 0:
             return '%d個' % rest
         if rest:
@@ -2986,6 +3525,23 @@ class DashboardApp:
         count = max(0, int(count or 0))
         boxes, rest = self._shulker_parts(count)
         rest_stacks, rest_items = self._stack_parts(rest)
+        if self._is_english():
+            if boxes == 0:
+                if count and count / 1728.0 < 0.01:
+                    return 'Shulker <0.01 boxes'
+                return 'Shulker %.2f boxes' % (count / 1728.0)
+            box_text = '%d box%s' % (boxes, '' if boxes == 1 else 'es')
+            if rest == 0:
+                return 'Shulker ' + box_text
+            if rest_items:
+                if rest_stacks == 0:
+                    return 'Shulker %s + %d item%s' % (
+                        box_text, rest_items, '' if rest_items == 1 else 's')
+                return 'Shulker %s + %d stack%s + %d item%s' % (
+                    box_text, rest_stacks, '' if rest_stacks == 1 else 's',
+                    rest_items, '' if rest_items == 1 else 's')
+            return 'Shulker %s + %d stack%s' % (
+                box_text, rest_stacks, '' if rest_stacks == 1 else 's')
         if boxes == 0:
             if count and count / 1728.0 < 0.01:
                 return 'シュルカー <0.01箱分'
@@ -3051,8 +3607,9 @@ class DashboardApp:
         detail_font = self._ui_font(12 if cols < 3 else 10, False)
 
         draw.rounded_rectangle([18, 18, width - 18, height - 18], radius=34, fill='#ffffff')
-        title = '建材リスト'
-        subtitle = os.path.basename(self.src_path or '設計図') + ' / 変換後に必要な素材'
+        title = self._t('建材リスト')
+        subtitle = os.path.basename(self.src_path or '設計図') + (
+            ' / Required materials after conversion' if self._is_english() else ' / 変換後に必要な素材')
         draw.text((margin, 38), title, font=title_font, fill='#000000')
         draw.text((margin, 84), subtitle, font=sub_font, fill='#6e6e73')
         total_blocks = sum(r['count'] for r in rows)
@@ -3097,7 +3654,7 @@ class DashboardApp:
                                 detail_font, '#007aff', right_w)
             self._draw_fit_text(draw, (sx, y + 60 if cols < 3 else y + 52), row['shulker_text'],
                                 detail_font, '#6e6e73', right_w)
-        footer = 'この画像は現在の素材変換設定を反映しています。'
+        footer = self._t('この画像は現在の素材変換設定を反映しています。')
         fw = draw.textlength(footer, font=id_font)
         draw.text(((width - fw) / 2, height - 32), footer, font=id_font, fill='#8e8e93')
         return im
@@ -3105,10 +3662,10 @@ class DashboardApp:
     def _render_materials_image(self):
         rows = self._material_list_rows()
         if not rows:
-            rows = [{'id': 'barrier', 'name': '建材なし', 'count': 0,
+            rows = [{'id': 'barrier', 'name': self._t('建材なし'), 'count': 0,
                      'name_en': 'No Materials',
-                     'stacks_text': '0個', 'shulker_text': 'シュルカー 0.00箱分',
-                     'storage_text': '0個 / シュルカー 0.00箱分',
+                     'stacks_text': self._stack_text(0), 'shulker_text': self._shulker_text(0),
+                     'storage_text': self._storage_text(0),
                      'sources': '', 'changed': 0}]
 
         cols = 4 if len(rows) >= 4 else max(1, len(rows))
@@ -3142,7 +3699,7 @@ class DashboardApp:
         meta_font = self._ui_font(12, True)
         small_font = self._ui_font(12, False)
 
-        draw.text((margin, 35), '建材リスト / Materials List', font=title_font, fill='#f4f7f8')
+        draw.text((margin, 35), self._t('建材リスト / Materials List'), font=title_font, fill='#f4f7f8')
         line_y = 88
         draw.rectangle([margin, line_y, width - margin, line_y + 5], fill='#355564')
         draw.rectangle([margin, line_y, margin + 116, line_y + 5], fill='#89e07f')
@@ -3177,12 +3734,12 @@ class DashboardApp:
                                 max_text, fallback_font=small_font)
             self._draw_fit_text(draw, (tx, y + 41), row.get('name_en') or self._english_block_name(row['id']),
                                 meta_font, '#9ac7d8', max_text, fallback_font=small_font)
-            count_text = '{:,} 個'.format(int(row['count'] or 0))
+            count_text = ('{:,} items' if self._is_english() else '{:,} 個').format(int(row['count'] or 0))
             self._draw_fit_text(draw, (tx, y + 68), count_text, count_font, '#83e47e',
                                 max_text, fallback_font=small_font)
             self._draw_fit_text(draw, (tx, y + 107), 'Stacks: ' + row['stacks_text'],
                                 meta_font, '#9ac7d8', max_text, fallback_font=small_font)
-            shulker_detail = str(row['shulker_text']).replace('シュルカー ', '', 1)
+            shulker_detail = str(row['shulker_text']).replace('シュルカー ', '', 1).replace('Shulker ', '', 1)
             self._draw_fit_text(draw, (tx, y + 128), 'Shulker: ' + shulker_detail,
                                 meta_font, '#c2d0d6', max_text, fallback_font=small_font)
         return im
