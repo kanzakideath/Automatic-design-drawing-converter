@@ -39,6 +39,9 @@ GPU_PREVIEW_BLOCK_LIMIT = 220000
 GPU_PREVIEW_FACE_LIMIT = 120000
 EMBEDDED_GPU_BLOCK_LIMIT = 8000
 EMBEDDED_GPU_FACE_LIMIT = 12000
+EMBEDDED_GPU_TARGET_FPS = 90
+FULLSCREEN_GPU_TARGET_FPS = 144
+AUTO_FOCUS_SURFACE_WARMUP = False
 CPU_PREVIEW_IDLE_BLOCK_LIMIT = 1050
 CPU_PREVIEW_IDLE_FACE_LIMIT = 1350
 CPU_PREVIEW_TEXTURE_FACE_LIMIT = 360
@@ -248,6 +251,8 @@ class InteractivePreview(tk.Canvas):
         self._gpu_start_time = 0.0
         self._gpu_error = None
         self._gpu_recover_after_id = None
+        self._last_gpu_size = None
+        self._last_gpu_view = None
         self.bind('<Configure>', lambda _e: self.refresh())
         self.bind('<Enter>', self._on_enter)
         self.bind('<ButtonPress-1>', lambda e: self._on_press(e, 'rotate'))
@@ -283,6 +288,8 @@ class InteractivePreview(tk.Canvas):
         self._gpu_handle = None
         self._gpu_starting = False
         self._gpu_start_time = 0.0
+        self._last_gpu_size = None
+        self._last_gpu_view = None
         if handle is not None:
             try:
                 handle.close(wait=wait)
@@ -434,9 +441,8 @@ class InteractivePreview(tk.Canvas):
                 return True
             token = self.app._preview_cache_token()
             if self._gpu_handle is not None and self._gpu_token == token and self._gpu_handle.alive:
-                self._gpu_handle.resize(w, h)
+                self._sync_gpu_size()
                 self._send_gpu_view()
-                self._raise_gpu_view()
                 return True
             if self._gpu_starting and self._gpu_token == token:
                 cache_token = token + (EMBEDDED_GPU_BLOCK_LIMIT, EMBEDDED_GPU_FACE_LIMIT)
@@ -455,10 +461,10 @@ class InteractivePreview(tk.Canvas):
                         'height': h,
                         'max_faces': min(int(payload.get('max_faces') or GPU_PREVIEW_FACE_LIMIT), EMBEDDED_GPU_FACE_LIMIT),
                         'startup_timeout': 3.0,
-                        'target_fps': 240,
+                        'target_fps': EMBEDDED_GPU_TARGET_FPS,
                         'uncapped_fps': False,
                         'show_overlay': False,
-                        'force_continuous_redraw': True,
+                        'force_continuous_redraw': False,
                         'initial_yaw': view[0],
                         'initial_pitch': view[1],
                         'initial_zoom': view[2],
@@ -470,7 +476,7 @@ class InteractivePreview(tk.Canvas):
                     self.close_gpu(wait=False)
                     self._gpu_token = None
                 else:
-                    self._draw_cpu_fallback(w, h)
+                    self._draw_loading(w, h)
                     self.after(220, lambda: self.refresh(immediate=True))
                     return True
 
@@ -479,7 +485,7 @@ class InteractivePreview(tk.Canvas):
             self._gpu_starting = True
             self._gpu_start_time = time.monotonic()
             self._gpu_error = None
-            self._draw_cpu_fallback(w, h)
+            self._draw_loading(w, h)
             try:
                 self.update_idletasks()
                 parent_hwnd = int(self.winfo_id())
@@ -498,16 +504,22 @@ class InteractivePreview(tk.Canvas):
                                                             max_faces=EMBEDDED_GPU_FACE_LIMIT)
                     if self.app._load_generation != expected_generation:
                         return
+                    if payload.get('blocks') and 'prebuilt_mesh' not in payload:
+                        try:
+                            import gpu_preview
+                            payload['prebuilt_mesh'] = gpu_preview.build_mesh(payload)
+                        except Exception:
+                            pass
                     payload = dict(payload)
                     payload.update({
                         'width': width,
                         'height': height,
                         'max_faces': min(int(payload.get('max_faces') or GPU_PREVIEW_FACE_LIMIT), EMBEDDED_GPU_FACE_LIMIT),
                         'startup_timeout': 3.0,
-                        'target_fps': 240,
+                        'target_fps': EMBEDDED_GPU_TARGET_FPS,
                         'uncapped_fps': False,
                         'show_overlay': False,
-                        'force_continuous_redraw': True,
+                        'force_continuous_redraw': False,
                         'initial_yaw': view_values[0],
                         'initial_pitch': view_values[1],
                         'initial_zoom': view_values[2],
@@ -549,6 +561,8 @@ class InteractivePreview(tk.Canvas):
             import gpu_preview
             self._gpu_handle = gpu_preview.open_embedded_preview_async(payload, parent_hwnd, width, height)
             self._gpu_token = expected_token
+            self._last_gpu_size = None
+            self._last_gpu_view = None
             self._send_gpu_view()
             self._sync_gpu_size()
             self._raise_gpu_view()
@@ -567,7 +581,12 @@ class InteractivePreview(tk.Canvas):
         if self._gpu_handle is None:
             return
         try:
-            self._gpu_handle.set_view(*self._gpu_view_values())
+            view = self._gpu_view_values()
+            key = (round(view[0], 3), round(view[1], 3), round(view[2], 4), view[3])
+            if key == self._last_gpu_view:
+                return
+            self._gpu_handle.set_view(*view)
+            self._last_gpu_view = key
         except Exception:
             pass
 
@@ -583,7 +602,11 @@ class InteractivePreview(tk.Canvas):
         if self._gpu_handle is None:
             return
         try:
-            self._gpu_handle.resize(max(260, self.winfo_width()), max(150, self.winfo_height()))
+            size = (max(260, self.winfo_width()), max(150, self.winfo_height()))
+            if size == self._last_gpu_size:
+                return
+            self._gpu_handle.resize(*size)
+            self._last_gpu_size = size
         except Exception:
             pass
 
@@ -3215,8 +3238,8 @@ class DashboardApp:
             'width': 1280,
             'height': 760,
             'startup_timeout': 0.05,
-            'target_fps': 0,
-            'uncapped_fps': True,
+            'target_fps': FULLSCREEN_GPU_TARGET_FPS,
+            'uncapped_fps': False,
             'show_overlay': False,
             'force_continuous_redraw': True,
             'initial_mode': 'orbit',
@@ -3407,7 +3430,7 @@ class DashboardApp:
             total_blocks = int(self.loaded_nbt.get('Metadata', {}).get('TotalBlocks', 0)) if self.loaded_nbt else 0
         except Exception:
             total_blocks = 0
-        if max_blocks <= 6000 and 0 < total_blocks <= 220000:
+        if AUTO_FOCUS_SURFACE_WARMUP and max_blocks <= 6000 and 0 < total_blocks <= 220000:
             full_surface_key = (id(self.loaded_nbt), 'surface_records', 10 ** 9)
             if full_surface_key in self._preview_source_cache:
                 source_limit = 10 ** 9
@@ -3935,9 +3958,23 @@ class DashboardApp:
         bits = max(2, (len(palette) - 1).bit_length())
         mask = (1 << bits) - 1
         longs = [int(v) & 0xffffffffffffffff for v in states]
+        palette_cache = []
+        for entry in palette:
+            source = str(entry.get('Name', 'minecraft:air'))
+            base = bd.strip_ns(source)
+            if base in ('air', 'cave_air', 'void_air'):
+                palette_cache.append(None)
+                continue
+            props_tag = entry.get('Properties', {})
+            try:
+                props = {str(k): str(v) for k, v in props_tag.items()}
+            except Exception:
+                props = {}
+            palette_cache.append((source, props))
         dx = 1 if int(size[0]) >= 0 else -1
         dy = 1 if int(size[1]) >= 0 else -1
         dz = 1 if int(size[2]) >= 0 else -1
+        ox, oy, oz = int(pos[0]), int(pos[1]), int(pos[2])
         out = []
         layer = sx * sz
         cap = max(int(max_blocks or 0), 900)
@@ -3955,23 +3992,16 @@ class DashboardApp:
             palette_index = self._palette_index_at(longs, bits, mask, idx)
             if palette_index < 0 or palette_index >= len(palette):
                 continue
-            entry = palette[palette_index]
-            source = str(entry.get('Name', 'minecraft:air'))
-            base = bd.strip_ns(source)
-            if base in ('air', 'cave_air', 'void_air'):
+            cached = palette_cache[palette_index]
+            if cached is None:
                 continue
-            props_tag = entry.get('Properties', {})
-            props = {}
-            try:
-                props = {str(k): str(v) for k, v in props_tag.items()}
-            except Exception:
-                props = {}
+            source, props = cached
             seen += 1
             y = idx // layer
             rem = idx - y * layer
             z = rem // sx
             x = rem - z * sx
-            rec = (int(pos[0]) + x * dx, int(pos[1]) + y * dy, int(pos[2]) + z * dz, source, props)
+            rec = (ox + x * dx, oy + y * dy, oz + z * dz, source, props)
             if len(out) < cap:
                 out.append(rec)
             else:

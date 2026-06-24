@@ -152,8 +152,8 @@ def open_embedded_preview_async(payload, parent_hwnd, width, height):
         'startup_timeout': 3.0,
         'command_queue': command_q,
         'show_overlay': False,
-        'force_continuous_redraw': True,
-        'target_fps': 240,
+        'force_continuous_redraw': False,
+        'target_fps': 90,
         'uncapped_fps': False,
         'async_mesh': True,
     })
@@ -611,6 +611,7 @@ class GpuPreviewWindow:
         self._mesh_result_q = queue.Queue(maxsize=1)
         self._mesh_building = False
         self._mesh_error = None
+        self._redraw_frames = 4
 
         width = int(payload.get('width') or 1280)
         height = int(payload.get('height') or 760)
@@ -664,6 +665,7 @@ class GpuPreviewWindow:
         except Exception:
             pass
         self._update_overlay_text()
+        self._request_redraw(4)
 
     def _native_hwnd(self):
         hwnd = getattr(self.window, '_hwnd', 0) or getattr(self.window, '_view_hwnd', 0)
@@ -733,6 +735,7 @@ class GpuPreviewWindow:
     def _drain_commands(self):
         if self.command_queue is None:
             return
+        changed = False
         while True:
             try:
                 cmd = self.command_queue.get_nowait()
@@ -746,6 +749,7 @@ class GpuPreviewWindow:
                 return
             if name == 'raise':
                 self._set_child_window_bounds(self.window.width, self.window.height, to_front=True)
+                changed = True
                 continue
             if name == 'resize' and len(cmd) >= 3:
                 width = max(240, int(cmd[1]))
@@ -756,6 +760,7 @@ class GpuPreviewWindow:
                     pass
                 self._set_child_window_bounds(width, height, to_front=True)
                 self._overlay_dirty = True
+                changed = True
             elif name == 'set_view' and len(cmd) >= 5:
                 self.yaw = float(cmd[1])
                 self.pitch = max(-12.0, min(78.0, float(cmd[2])))
@@ -764,6 +769,9 @@ class GpuPreviewWindow:
                 if self.mode == 'orbit':
                     self._reset_camera()
                 self._overlay_dirty = True
+                changed = True
+        if changed:
+            self._request_redraw(4)
 
     def _create_atlas_texture(self):
         atlas = self.payload.get('atlas') or {}
@@ -817,6 +825,7 @@ class GpuPreviewWindow:
         self._mesh_building = False
         self._mesh_error = None
         self._overlay_dirty = True
+        self._request_redraw(8)
 
     def _start_mesh_worker(self):
         if self._mesh_building:
@@ -839,13 +848,15 @@ class GpuPreviewWindow:
         try:
             status, detail = self._mesh_result_q.get_nowait()
         except queue.Empty:
-            return
+            return False
         if status == 'ok':
             self._upload_mesh(detail)
-            return
+            return True
         self._mesh_building = False
         self._mesh_error = detail
         self._overlay_dirty = True
+        self._request_redraw(4)
+        return True
 
     def _build_ground_lists(self):
         gl = self.gl
@@ -955,6 +966,13 @@ class GpuPreviewWindow:
             a[0] * b[1] - a[1] * b[0],
         )
 
+    def _request_redraw(self, frames=2):
+        self._redraw_frames = max(self._redraw_frames, int(frames or 1))
+        try:
+            self.window.invalid = True
+        except Exception:
+            pass
+
     def update(self, dt):
         self._drain_commands()
         if self._closed:
@@ -968,11 +986,18 @@ class GpuPreviewWindow:
             self._fps_time = 0.0
             self._overlay_dirty = True
             self._update_overlay_text()
-        if self.force_continuous_redraw:
+        is_moving = self.mode == 'walk' and bool(self.keys)
+        if self.force_continuous_redraw or self.mouse_down or is_moving:
             try:
                 self.window.invalid = True
             except Exception:
                 pass
+        elif self._redraw_frames > 0:
+            try:
+                self.window.invalid = True
+            except Exception:
+                pass
+            self._redraw_frames -= 1
         if self.mode != 'walk':
             return
         span = max(float(self.bounds.get('span_x', 32.0)), float(self.bounds.get('span_z', 32.0)))
@@ -993,6 +1018,8 @@ class GpuPreviewWindow:
             self.walk_pos[1] += move
         if self._key('LCTRL') or self._key('RCTRL'):
             self.walk_pos[1] -= move
+        if is_moving:
+            self._request_redraw(2)
 
     def _key(self, name):
         return name in self.keys
@@ -1033,10 +1060,12 @@ class GpuPreviewWindow:
     def on_mouse_press(self, _x, _y, button, _mods):
         if button == self.pyglet.window.mouse.LEFT:
             self.mouse_down = True
+            self._request_redraw(8)
 
     def on_mouse_release(self, _x, _y, button, _mods):
         if button == self.pyglet.window.mouse.LEFT:
             self.mouse_down = False
+            self._request_redraw(4)
 
     def on_mouse_drag(self, _x, _y, dx, dy, buttons, mods):
         mouse = self.pyglet.window.mouse
@@ -1047,9 +1076,11 @@ class GpuPreviewWindow:
         elif buttons & mouse.LEFT:
             self.yaw += dx * 0.10
             self.pitch = max(-12.0, min(78.0, self.pitch - dy * 0.07))
+        self._request_redraw(4)
 
     def on_mouse_scroll(self, _x, _y, _sx, sy):
         self.zoom = max(0.18, min(8.0, self.zoom * (1.04 ** sy)))
+        self._request_redraw(4)
 
     def on_key_press(self, symbol, _mods):
         key = self.pyglet.window.key
@@ -1108,10 +1139,12 @@ class GpuPreviewWindow:
             self.pitch = 12.0
             self.zoom = 1.05
             self._overlay_dirty = True
+        self._request_redraw(6)
 
     def on_key_release(self, symbol, _mods):
         name = self.pyglet.window.key.symbol_string(symbol)
         self.keys.discard(name)
+        self._request_redraw(4)
 
     def on_close(self):
         self.close()
