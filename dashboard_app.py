@@ -1251,6 +1251,9 @@ class DashboardApp:
         self._gpu_payload_building = False
         self._gpu_payload_build_generation = None
         self._gpu_warmup_after_id = None
+        self._preview_refresh_after_id = None
+        self._material_rows_cache_token = None
+        self._material_rows_cache = None
         self._gpu_open_when_ready = False
         self._focus_surface_building = False
         self._load_generation = 0
@@ -1281,6 +1284,10 @@ class DashboardApp:
             tuple(sorted((str(k), str(v)) for k, v in self.overrides.items())),
         )
 
+    def _invalidate_material_rows_cache(self):
+        self._material_rows_cache_token = None
+        self._material_rows_cache = None
+
     def _dispose_preview_view(self):
         if hasattr(self, 'preview_view'):
             try:
@@ -1295,6 +1302,12 @@ class DashboardApp:
         if advance_generation:
             self._load_generation += 1
         self._dispose_preview_view()
+        if self._preview_refresh_after_id:
+            try:
+                self.root.after_cancel(self._preview_refresh_after_id)
+            except tk.TclError:
+                pass
+            self._preview_refresh_after_id = None
         if self._gpu_warmup_after_id:
             try:
                 self.root.after_cancel(self._gpu_warmup_after_id)
@@ -1311,6 +1324,7 @@ class DashboardApp:
         self._gpu_payload_build_generation = None
         self._gpu_open_when_ready = False
         self._focus_surface_building = False
+        self._invalidate_material_rows_cache()
         self._wheel_target = None
 
     def get_icon(self, bid, size=34):
@@ -1347,6 +1361,7 @@ class DashboardApp:
         self.app_settings['language'] = language
         _save_app_settings(self.app_settings)
         self.image_cache = {}
+        self._invalidate_material_rows_cache()
         self._close_materials_window()
         if dialog is not None:
             try:
@@ -2557,7 +2572,6 @@ class DashboardApp:
 
     # ---------------------------------------------------------------- refresh
     def _refresh_layout(self):
-        self.image_cache = {}
         self._wheel_target = None
         self._dispose_preview_view()
         for w in self.main.winfo_children():
@@ -2577,6 +2591,20 @@ class DashboardApp:
             self.progress_lbl.configure(text='%d%%' % int(self.progress_var.get()))
         if text and hasattr(self, 'status_lbl'):
             self.status_lbl.configure(text=text)
+
+    def _schedule_preview_refresh(self, delay=90):
+        if self._preview_refresh_after_id:
+            try:
+                self.root.after_cancel(self._preview_refresh_after_id)
+            except tk.TclError:
+                pass
+            self._preview_refresh_after_id = None
+
+        def run():
+            self._preview_refresh_after_id = None
+            self._refresh_preview_only()
+
+        self._preview_refresh_after_id = self.root.after(max(1, int(delay)), run)
 
     # ---------------------------------------------------------------- events
     def _bind_wheel(self, widget, target_canvas):
@@ -3041,12 +3069,13 @@ class DashboardApp:
                                   state='readonly', width=7, font=('Yu Gothic UI', 8),
                                   style='Studio.TCombobox')
         method_box.grid(row=0, column=3, padx=4)
-        method_box.bind('<<ComboboxSelected>>',
-                        lambda _e, c=conv, v=method: self._method_changed(
-                            c, '保持' if v.get() == self._t('保持') else '置き換え'))
-        self._status_badge(row, conv, target).grid(row=0, column=4, padx=4)
+        status_lbl = self._status_badge(row, conv, target)
+        status_lbl.grid(row=0, column=4, padx=4)
 
-        rowdata = {'conv': conv, 'target': target, 'btn': target_btn, 'bg': bgc}
+        rowdata = {'conv': conv, 'target': target, 'btn': target_btn, 'status': status_lbl, 'bg': bgc}
+        method_box.bind('<<ComboboxSelected>>',
+                        lambda _e, c=conv, v=method, r=rowdata: self._method_changed(
+                            c, '保持' if v.get() == self._t('保持') else '置き換え', r))
         target_btn.configure(command=lambda r=rowdata: self.open_picker(r))
         self._button(row, '⚙', lambda r=rowdata: self.open_picker(r), bg=bgc, fg=UI['MUTED'],
                      size=10, padx=5, pady=3).grid(row=0, column=5, padx=(2, 6))
@@ -3061,6 +3090,16 @@ class DashboardApp:
         return TranslatedLabel(parent, text=text, bg=bg, fg=fg, width=6,
                                font=('Yu Gothic UI', 8, 'bold'), padx=3, pady=3)
 
+    def _refresh_status(self, rowdata):
+        lbl = rowdata.get('status')
+        if lbl is None:
+            return
+        target = rowdata.get('target', KEEP)
+        if target == KEEP:
+            lbl.configure(text='未設定', fg=UI['ORANGE'], bg=UI['WARNING_BG'])
+        else:
+            lbl.configure(text='適用', fg=UI['GREEN'], bg=UI['SUCCESS_BG'])
+
     def _refresh_target(self, rowdata):
         tgt = rowdata['target']
         btn = rowdata['btn']
@@ -3072,15 +3111,20 @@ class DashboardApp:
             btn.configure(image=icon, text=' ' + self._block_name(tgt), bg=UI['TARGET_BG'], fg=UI['TEXT'])
         btn.image = icon
 
-    def _method_changed(self, conv, value):
+    def _method_changed(self, conv, value, rowdata=None):
         if value == '保持':
             self.overrides[conv.source] = KEEP
         elif conv.candidates:
             self.overrides[conv.source] = conv.target
         else:
             self.overrides.pop(conv.source, None)
+        if rowdata is not None:
+            rowdata['target'] = self._target_for(conv)
+            if rowdata.get('btn') is not None:
+                self._refresh_target(rowdata)
+            self._refresh_status(rowdata)
         self._mark_dirty()
-        self._refresh_layout()
+        self._schedule_preview_refresh()
 
     def set_filter(self, key):
         self.active_filter = key
@@ -3133,7 +3177,12 @@ class DashboardApp:
             self.preview_view.reset_view()
 
     def _refresh_preview_only(self):
-        self.image_cache = {}
+        if self._preview_refresh_after_id:
+            try:
+                self.root.after_cancel(self._preview_refresh_after_id)
+            except tk.TclError:
+                pass
+            self._preview_refresh_after_id = None
         if hasattr(self, 'preview_view'):
             self.preview_view.refresh(immediate=True)
         if hasattr(self, 'preview_body'):
@@ -3274,10 +3323,11 @@ class DashboardApp:
             rowdata['target'] = self._target_for(conv)
             if rowdata.get('btn') is not None:
                 self._refresh_target(rowdata)
+            self._refresh_status(rowdata)
             top.destroy()
             self._wheel_target = self.map_canvas if hasattr(self, 'map_canvas') else None
             self._mark_dirty()
-            self._refresh_preview_only()
+            self._schedule_preview_refresh(60)
 
         all_blocks = bd.all_blocks()
 
@@ -3371,7 +3421,10 @@ class DashboardApp:
         self._gpu_payload_building = False
         self._gpu_payload_build_generation = None
         self._gpu_open_when_ready = False
-        self._dispose_preview_view()
+        self._invalidate_material_rows_cache()
+        if hasattr(self, 'preview_view'):
+            self.preview_view._last_render_key = None
+            self.preview_view._last_render_image = None
         if hasattr(self, 'save_state'):
             self.save_state.configure(text='● 未保存の変更があります', fg=UI['ORANGE'])
 
@@ -3404,6 +3457,7 @@ class DashboardApp:
     def clean_unused_rules(self):
         valid_sources = set(c.source for c in self._all_records())
         self.overrides = dict((k, v) for k, v in self.overrides.items() if k in valid_sources)
+        self._mark_dirty()
         self._refresh_layout()
 
     def add_manual_rule(self):
@@ -3461,6 +3515,16 @@ class DashboardApp:
         messagebox.showinfo(APP_TITLE, '建材リスト画像を書き出しました:\n%s' % out)
 
     def _material_list_rows(self):
+        token = (
+            id(self.loaded_nbt),
+            self.src_path,
+            bd.active_registry(),
+            self.language,
+            tuple(sorted((str(k), str(v)) for k, v in self.overrides.items())),
+            tuple((bd.strip_ns(c.source), int(c.count or 0)) for c in self._all_records()),
+        )
+        if self._material_rows_cache_token == token and self._material_rows_cache is not None:
+            return self._material_rows_cache
         grouped = {}
         for conv in self._all_records():
             target = self._target_for(conv)
@@ -3496,6 +3560,8 @@ class DashboardApp:
                 'changed': data['changed'],
             })
         rows.sort(key=lambda r: (-r['count'], r['name'], r['id']))
+        self._material_rows_cache_token = token
+        self._material_rows_cache = rows
         return rows
 
     def _stack_parts(self, count):
@@ -4643,23 +4709,36 @@ class DashboardApp:
         if source_key in self._preview_source_cache:
             records = self._preview_source_cache[source_key]
         else:
-            records = []
-            try:
-                regs = self.loaded_nbt.get('Regions', {})
-                for reg in regs.values():
-                    if not full_source and len(records) >= source_cap:
-                        break
-                    cap_left = source_cap if full_source else max(1, source_cap - len(records))
-                    records.extend(self._region_source_records(reg, cap_left))
-            except Exception:
-                return []
-            if records:
-                min_x = min(r[0] for r in records)
-                min_y = min(r[1] for r in records)
-                min_z = min(r[2] for r in records)
-                records = [(r[0] - min_x, r[1] - min_y, r[2] - min_z, r[3],
-                            r[4] if len(r) > 4 and isinstance(r[4], dict) else {})
-                           for r in records]
+            records = None
+            if not full_source:
+                best_key = None
+                for cache_key in self._preview_source_cache:
+                    if (isinstance(cache_key, tuple) and len(cache_key) == 3
+                            and cache_key[0] == id(self.loaded_nbt)
+                            and cache_key[1] == 'sample_non_air'
+                            and int(cache_key[2]) >= source_cap
+                            and (best_key is None or int(cache_key[2]) < int(best_key[2]))):
+                        best_key = cache_key
+                if best_key is not None:
+                    records = self._preview_source_cache[best_key]
+            if records is None:
+                records = []
+                try:
+                    regs = self.loaded_nbt.get('Regions', {})
+                    for reg in regs.values():
+                        if not full_source and len(records) >= source_cap:
+                            break
+                        cap_left = source_cap if full_source else max(1, source_cap - len(records))
+                        records.extend(self._region_source_records(reg, cap_left))
+                except Exception:
+                    return []
+                if records:
+                    min_x = min(r[0] for r in records)
+                    min_y = min(r[1] for r in records)
+                    min_z = min(r[2] for r in records)
+                    records = [(r[0] - min_x, r[1] - min_y, r[2] - min_z, r[3],
+                                r[4] if len(r) > 4 and isinstance(r[4], dict) else {})
+                               for r in records]
             self._preview_source_cache[source_key] = records
         surface_key = (id(self.loaded_nbt), 'surface_records', requested)
         if surface_key in self._preview_source_cache:
