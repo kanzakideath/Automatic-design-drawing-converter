@@ -819,6 +819,7 @@ class DashboardApp:
         self.sidebar_collapsed = False
         self.sidebar_items = {}
         self.preview_tab_buttons = {}
+        self.materials_window = None
         self.pending_update = None
         self.update_checking = False
         self.update_notified = False
@@ -1677,7 +1678,7 @@ class DashboardApp:
         row.pack(fill='x')
         self._button(row, 'PNG保存', self.export_preview, bg=UI['BTN_BG'],
                      size=8, padx=8, pady=6).pack(side='left', fill='x', expand=True, padx=(0, 5))
-        self._button(row, '建材リスト', self.export_materials_image, bg=UI['BTN_BG'],
+        self._button(row, '建材リスト', self.open_materials_window, bg=UI['BTN_BG'],
                      size=8, padx=8, pady=6).pack(side='left', fill='x', expand=True, padx=(5, 0))
         self._button(action, '別の設計図を読み込む', self.choose_file,
                      bg=UI['BTN_BG'], size=8, pady=6).pack(fill='x', pady=(6, 0))
@@ -1917,7 +1918,7 @@ class DashboardApp:
         bottom.pack(fill='x')
         self._button(bottom, '⇩ プレビューを書き出し', self.export_preview,
                      bg=UI['BTN_BG'], size=8, pady=6).pack(side='left', fill='x', expand=True)
-        self._button(bottom, '建材リスト', self.export_materials_image,
+        self._button(bottom, '建材リスト', self.open_materials_window,
                      bg=UI['BTN_BG'], size=8, padx=10, pady=6).pack(side='left', padx=(6, 0))
         self._button(bottom, '⌄', self.open_export_menu, bg=UI['BTN_BG'], size=8, padx=10, pady=6).pack(side='right', padx=(6, 0))
 
@@ -1993,7 +1994,7 @@ class DashboardApp:
             w.destroy()
         stats = self._stats()
         if self.preview_tab == 'materials':
-            self._build_materials_list_panel(self.preview_body, compact=True)
+            self._build_materials_window_launcher(self.preview_body)
             return
         row = tk.Frame(self.preview_body, bg=UI['PANEL'])
         row.pack(fill='x', pady=(0, 10))
@@ -2049,6 +2050,7 @@ class DashboardApp:
         except tk.TclError:
             pass
         self._sync_progress()
+        self._refresh_materials_window_if_open()
 
     def _sync_progress(self, value=None, text=None):
         if value is not None:
@@ -2300,7 +2302,93 @@ class DashboardApp:
             pass
         return base.replace('_', ' ').title()
 
-    def _build_materials_list_panel(self, parent, compact=True):
+    def _build_materials_window_launcher(self, parent):
+        panel = tk.Frame(parent, bg=UI['PANEL_2'], highlightthickness=1, highlightbackground=UI['BORDER'])
+        panel.pack(fill='x', pady=(0, 10))
+        self._label(panel, '建材リストは別ウィンドウで表示します。',
+                    size=9, weight='bold', bg=UI['PANEL_2']).pack(anchor='w', padx=12, pady=(10, 2))
+        self._label(panel, '右上の保存ボタンからPNGを書き出せます。',
+                    size=8, fg=UI['MUTED'], bg=UI['PANEL_2']).pack(anchor='w', padx=12)
+        self._button(panel, '建材リストを開く', self.open_materials_window,
+                     bg=UI['ACCENT'], fg='white', size=9, padx=14, pady=7).pack(anchor='w', padx=12, pady=(8, 12))
+
+    def open_materials_window(self):
+        top = getattr(self, 'materials_window', None)
+        try:
+            if top is not None and top.winfo_exists():
+                self._rebuild_materials_window()
+                top.lift()
+                top.focus_force()
+                return
+        except tk.TclError:
+            self.materials_window = None
+
+        top = tk.Toplevel(self.root)
+        self.materials_window = top
+        top.title('建材リスト / Materials List')
+        top.configure(bg=UI['BG'])
+        self._set_centered_geometry(top, 980, 720)
+        top.minsize(760, 520)
+        top.transient(self.root)
+        top.protocol('WM_DELETE_WINDOW', self._close_materials_window)
+        self._rebuild_materials_window()
+        top.lift()
+        top.focus_force()
+
+    def _close_materials_window(self):
+        top = getattr(self, 'materials_window', None)
+        self.materials_window = None
+        if top is not None:
+            try:
+                top.destroy()
+            except tk.TclError:
+                pass
+
+    def _refresh_materials_window_if_open(self):
+        top = getattr(self, 'materials_window', None)
+        if top is None:
+            return
+        try:
+            if not top.winfo_exists():
+                self.materials_window = None
+                return
+        except tk.TclError:
+            self.materials_window = None
+            return
+        self._rebuild_materials_window()
+
+    def _rebuild_materials_window(self):
+        top = getattr(self, 'materials_window', None)
+        if top is None:
+            return
+        try:
+            for child in top.winfo_children():
+                child.destroy()
+        except tk.TclError:
+            self.materials_window = None
+            return
+
+        top.grid_rowconfigure(1, weight=1)
+        top.grid_columnconfigure(0, weight=1)
+        head = tk.Frame(top, bg=UI['HEADER'])
+        head.grid(row=0, column=0, sticky='ew')
+        self._label(head, '建材リスト / Materials List', size=14, weight='bold',
+                    bg=UI['HEADER']).pack(side='left', padx=16, pady=12)
+        self._button(head, 'PNG保存', self.export_materials_image,
+                     bg=UI['ACCENT'], fg='white', size=9, padx=12, pady=5).pack(side='right', padx=(0, 12))
+        self._button(head, '閉じる', self._close_materials_window,
+                     bg=UI['BTN_BG'], size=8, padx=10, pady=4).pack(side='right', padx=12)
+
+        body = tk.Frame(top, bg=UI['BG'])
+        body.grid(row=1, column=0, sticky='nsew', padx=16, pady=16)
+        body.grid_rowconfigure(0, weight=1)
+        body.grid_columnconfigure(0, weight=1)
+        panel = tk.Frame(body, bg=UI['PANEL'], highlightthickness=1, highlightbackground=UI['BORDER'],
+                         padx=14, pady=14)
+        panel.grid(row=0, column=0, sticky='nsew')
+        self._build_materials_list_panel(panel, compact=False, show_save=False)
+
+    def _build_materials_list_panel(self, parent, compact=True, show_save=True):
         rows = self._material_list_rows()
         total = sum(int(r.get('count') or 0) for r in rows)
 
@@ -2312,8 +2400,9 @@ class DashboardApp:
                     bg=UI['PANEL']).pack(anchor='w')
         summary = '%d種類 / %s個 / %s' % (len(rows), '{:,}'.format(total), self._shulker_text(total))
         self._label(title, summary, size=8, fg=UI['MUTED'], bg=UI['PANEL']).pack(anchor='w')
-        self._button(head, '▣ PNG保存', self.export_materials_image,
-                     bg=UI['ACCENT'], fg='white', size=8, padx=12, pady=6).pack(side='right')
+        if show_save:
+            self._button(head, '▣ PNG保存', self.export_materials_image,
+                         bg=UI['ACCENT'], fg='white', size=8, padx=12, pady=6).pack(side='right')
 
         if not rows:
             empty = tk.Frame(parent, bg=UI['PANEL_2'], highlightthickness=1, highlightbackground=UI['BORDER'])
@@ -2477,6 +2566,12 @@ class DashboardApp:
         self._refresh_layout()
 
     def set_preview_tab(self, key):
+        if key == 'materials':
+            self.open_materials_window()
+            if self.preview_tab == 'materials':
+                self.preview_tab = 'overview'
+            self._update_preview_tabs()
+            return
         self.preview_tab = key
         self._update_preview_tabs()
         if hasattr(self, 'preview_body'):
@@ -2525,6 +2620,7 @@ class DashboardApp:
                 self._build_preview_body_compact()
             else:
                 self._build_preview_body()
+        self._refresh_materials_window_if_open()
         self.root.after(180, lambda: self._kick_preview_start(24))
 
     def _kick_preview_start(self, retries=24):
@@ -2554,7 +2650,7 @@ class DashboardApp:
             w.destroy()
         stats = self._stats()
         if self.preview_tab == 'materials':
-            self._build_materials_list_panel(self.preview_body, compact=False)
+            self._build_materials_window_launcher(self.preview_body)
             return
         if self.preview_tab == 'stats':
             for label, value in [
