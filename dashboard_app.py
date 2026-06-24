@@ -1981,9 +1981,7 @@ class DashboardApp:
             btn.pack(side='left', fill='x', expand=True, padx=(0, 4))
             self.preview_tab_buttons[key] = btn
         self._button(tabs, 'PNG保存', self.export_preview,
-                     bg=UI['BTN_BG_2'], size=9, padx=12, pady=6).pack(side='left', padx=(8, 0))
-        self._button(tabs, '建材リスト画像', self.export_materials_image,
-                     bg=UI['BTN_BG_2'], size=9, padx=12, pady=6).pack(side='left', padx=(6, 0))
+                      bg=UI['BTN_BG_2'], size=9, padx=12, pady=6).pack(side='left', padx=(8, 0))
 
         self.preview_body = tk.Frame(panel, bg=UI['PANEL'])
         self.preview_body.grid(row=4, column=0, sticky='nsew', padx=16)
@@ -1994,20 +1992,11 @@ class DashboardApp:
         for w in self.preview_body.winfo_children():
             w.destroy()
         stats = self._stats()
+        if self.preview_tab == 'materials':
+            self._build_materials_list_panel(self.preview_body, compact=True)
+            return
         row = tk.Frame(self.preview_body, bg=UI['PANEL'])
         row.pack(fill='x', pady=(0, 10))
-        if self.preview_tab == 'materials':
-            top = self._top_materials()[:4]
-            if not top:
-                top = [('建材', '-')]
-            for label, value in top:
-                box = tk.Frame(row, bg=UI['PANEL_2'], highlightthickness=1, highlightbackground=UI['BORDER'])
-                box.pack(side='left', fill='x', expand=True, padx=(0, 8))
-                self._label(box, label, size=8, weight='bold', bg=UI['PANEL_2'],
-                            wraplength=190).pack(anchor='w', padx=10, pady=(7, 0))
-                self._label(box, value, size=9, fg=UI['ACCENT'], weight='bold',
-                            bg=UI['PANEL_2']).pack(anchor='w', padx=10, pady=(0, 7))
-            return
         if self.preview_tab == 'stats':
             items = [
                 ('競合ルール', stats['conflicts']),
@@ -2299,6 +2288,95 @@ class DashboardApp:
         return [(r['name'], 'x%s / %s / %s' % (
             '{:,}'.format(r['count']), r['stacks_text'], r['shulker_text'])) for r in rows]
 
+    def _english_block_name(self, bid):
+        base = bd.strip_ns(bid)
+        try:
+            assets = getattr(icons, 'minecraft_assets', None)
+            if assets is not None:
+                name = assets.lang_name(base, 'en_us')
+                if name:
+                    return str(name)
+        except Exception:
+            pass
+        return base.replace('_', ' ').title()
+
+    def _build_materials_list_panel(self, parent, compact=True):
+        rows = self._material_list_rows()
+        total = sum(int(r.get('count') or 0) for r in rows)
+
+        head = tk.Frame(parent, bg=UI['PANEL'])
+        head.pack(fill='x', pady=(0, 8))
+        title = tk.Frame(head, bg=UI['PANEL'])
+        title.pack(side='left', fill='x', expand=True)
+        self._label(title, '建材リスト / Materials List', size=10, weight='bold',
+                    bg=UI['PANEL']).pack(anchor='w')
+        summary = '%d種類 / %s個 / %s' % (len(rows), '{:,}'.format(total), self._shulker_text(total))
+        self._label(title, summary, size=8, fg=UI['MUTED'], bg=UI['PANEL']).pack(anchor='w')
+        self._button(head, '▣ PNG保存', self.export_materials_image,
+                     bg=UI['ACCENT'], fg='white', size=8, padx=12, pady=6).pack(side='right')
+
+        if not rows:
+            empty = tk.Frame(parent, bg=UI['PANEL_2'], highlightthickness=1, highlightbackground=UI['BORDER'])
+            empty.pack(fill='x')
+            self._label(empty, '設計図を読み込むと必要建材がここに表示されます。',
+                        size=9, fg=UI['TEXT_SOFT'], bg=UI['PANEL_2']).pack(padx=12, pady=18)
+            return
+
+        wrap = tk.Frame(parent, bg=UI['PANEL'])
+        wrap.pack(fill='both', expand=True)
+        height = 260 if compact else 360
+        canvas = tk.Canvas(wrap, bg=UI['PANEL'], height=height, highlightthickness=1,
+                           highlightbackground=UI['BORDER'], bd=0)
+        scroll = tk.Scrollbar(wrap, orient='vertical', command=canvas.yview,
+                              bg=UI['PANEL_2'], troughcolor=UI['PANEL'])
+        canvas.configure(yscrollcommand=scroll.set)
+        canvas.pack(side='left', fill='both', expand=True)
+        scroll.pack(side='right', fill='y')
+
+        inner = tk.Frame(canvas, bg=UI['PANEL'])
+        window_id = canvas.create_window((0, 0), window=inner, anchor='nw')
+
+        def configure_inner(_event=None):
+            canvas.configure(scrollregion=canvas.bbox('all'))
+
+        def configure_canvas(event):
+            canvas.itemconfigure(window_id, width=event.width)
+
+        inner.bind('<Configure>', configure_inner)
+        canvas.bind('<Configure>', configure_canvas)
+        self._bind_wheel(canvas, canvas)
+        self._bind_wheel(inner, canvas)
+
+        for index, row in enumerate(rows):
+            self._material_list_item(inner, row, index)
+
+    def _material_list_item(self, parent, row, index):
+        bg = UI['PANEL_2'] if index % 2 == 0 else UI['PANEL_3']
+        item = tk.Frame(parent, bg=bg, highlightthickness=1, highlightbackground=UI['BORDER'])
+        item.pack(fill='x', padx=1, pady=(0, 6))
+        icon = self.get_icon(row['id'], 42)
+        icon_lbl = tk.Label(item, image=icon, bg=bg)
+        icon_lbl.image = icon
+        icon_lbl.pack(side='left', padx=10, pady=9)
+
+        text = tk.Frame(item, bg=bg)
+        text.pack(side='left', fill='x', expand=True, pady=8)
+        self._label(text, row['name'], size=9, weight='bold', bg=bg,
+                    anchor='w').pack(anchor='w')
+        en_line = '%s  ·  %s' % (row.get('name_en') or self._english_block_name(row['id']), row['id'])
+        self._label(text, en_line, size=7, fg=UI['MUTED'], bg=bg,
+                    anchor='w').pack(anchor='w')
+        if row.get('sources'):
+            self._label(text, row['sources'], size=7, fg=UI['TEXT_SOFT'], bg=bg,
+                        anchor='w', wraplength=360).pack(anchor='w', pady=(2, 0))
+
+        right = tk.Frame(item, bg=bg)
+        right.pack(side='right', padx=10, pady=8)
+        self._label(right, '{:,}個'.format(int(row['count'] or 0)), size=11,
+                    fg=UI['ACCENT'], weight='bold', bg=bg).pack(anchor='e')
+        self._label(right, row['stacks_text'], size=7, fg=UI['TEXT_SOFT'], bg=bg).pack(anchor='e')
+        self._label(right, row['shulker_text'], size=7, fg=UI['MUTED'], bg=bg).pack(anchor='e')
+
     # ---------------------------------------------------------------- rows
     def _filter_chip(self, parent, key, label, count):
         active = self.active_filter == key
@@ -2443,7 +2521,10 @@ class DashboardApp:
         if hasattr(self, 'preview_view'):
             self.preview_view.refresh(immediate=True)
         if hasattr(self, 'preview_body'):
-            self._build_preview_body()
+            if getattr(self, '_compact_preview_body', False):
+                self._build_preview_body_compact()
+            else:
+                self._build_preview_body()
         self.root.after(180, lambda: self._kick_preview_start(24))
 
     def _kick_preview_start(self, retries=24):
@@ -2473,10 +2554,7 @@ class DashboardApp:
             w.destroy()
         stats = self._stats()
         if self.preview_tab == 'materials':
-            self._button(self.preview_body, '建材リストPNGを書き出し', self.export_materials_image,
-                         bg=UI['ACCENT'], size=8, padx=12, pady=6).pack(fill='x', pady=(0, 8))
-            for label, value in self._top_materials():
-                self._metric_line(self.preview_body, label, value)
+            self._build_materials_list_panel(self.preview_body, compact=False)
             return
         if self.preview_tab == 'stats':
             for label, value in [
@@ -2600,7 +2678,9 @@ class DashboardApp:
                 if base in seen:
                     continue
                 seen.add(base)
-                if q and q not in base.lower() and q not in bd.jp_name(base).lower():
+                base_words = base.replace('_', ' ').lower()
+                en_name = self._english_block_name(base).lower()
+                if q and q not in base.lower() and q not in base_words and q not in bd.jp_name(base).lower() and q not in en_name:
                     continue
                 items.append(base)
             return items
@@ -2612,7 +2692,8 @@ class DashboardApp:
                               lambda: choose(KEEP), keep=True)
             items = items_for_selection()
             for cand in items:
-                self._picker_item(inner, bd.jp_name(cand), cand, lambda c=cand: choose(c),
+                title = '%s / %s' % (bd.jp_name(cand), self._english_block_name(cand))
+                self._picker_item(inner, title, cand, lambda c=cand: choose(c),
                                   recommended=(cand == conv.target))
             count_lbl.configure(text='表示: %d件 / 全ブロック: %d件' % (len(items), len(all_blocks)))
             cv.yview_moveto(0)
@@ -2778,6 +2859,7 @@ class DashboardApp:
             rows.append({
                 'id': bid,
                 'name': bd.jp_name(bid),
+                'name_en': self._english_block_name(bid),
                 'count': data['count'],
                 'stacks_text': self._stack_text(data['count']),
                 'shulker_text': self._shulker_text(data['count']),
@@ -2928,6 +3010,7 @@ class DashboardApp:
         rows = self._material_list_rows()
         if not rows:
             rows = [{'id': 'barrier', 'name': '建材なし', 'count': 0,
+                     'name_en': 'No Materials',
                      'stacks_text': '0個', 'shulker_text': 'シュルカー 0.00箱分',
                      'storage_text': '0個 / シュルカー 0.00箱分',
                      'sources': '', 'changed': 0}]
@@ -2937,7 +3020,7 @@ class DashboardApp:
         margin = 42
         gap = 14
         header_h = 108
-        card_h = 136
+        card_h = 152
         row_gap = 14
         row_count = int(math.ceil(len(rows) / float(cols)))
         height = header_h + row_count * (card_h + row_gap) + 38
@@ -2963,7 +3046,7 @@ class DashboardApp:
         meta_font = self._ui_font(12, True)
         small_font = self._ui_font(12, False)
 
-        draw.text((margin, 35), '建材リスト', font=title_font, fill='#f4f7f8')
+        draw.text((margin, 35), '建材リスト / Materials List', font=title_font, fill='#f4f7f8')
         line_y = 88
         draw.rectangle([margin, line_y, width - margin, line_y + 5], fill='#355564')
         draw.rectangle([margin, line_y, margin + 116, line_y + 5], fill='#89e07f')
@@ -2994,15 +3077,17 @@ class DashboardApp:
 
             tx = ix + icon_box + 14
             max_text = col_w - (tx - x) - 16
-            self._draw_fit_text(draw, (tx, y + 18), row['name'], name_font, '#eef3f5',
+            self._draw_fit_text(draw, (tx, y + 14), row['name'], name_font, '#eef3f5',
                                 max_text, fallback_font=small_font)
+            self._draw_fit_text(draw, (tx, y + 41), row.get('name_en') or self._english_block_name(row['id']),
+                                meta_font, '#9ac7d8', max_text, fallback_font=small_font)
             count_text = '{:,} 個'.format(int(row['count'] or 0))
-            self._draw_fit_text(draw, (tx, y + 54), count_text, count_font, '#83e47e',
+            self._draw_fit_text(draw, (tx, y + 68), count_text, count_font, '#83e47e',
                                 max_text, fallback_font=small_font)
-            self._draw_fit_text(draw, (tx, y + 91), 'スタック: ' + row['stacks_text'],
+            self._draw_fit_text(draw, (tx, y + 107), 'Stacks: ' + row['stacks_text'],
                                 meta_font, '#9ac7d8', max_text, fallback_font=small_font)
             shulker_detail = str(row['shulker_text']).replace('シュルカー ', '', 1)
-            self._draw_fit_text(draw, (tx, y + 112), 'シュルカー: ' + shulker_detail,
+            self._draw_fit_text(draw, (tx, y + 128), 'Shulker: ' + shulker_detail,
                                 meta_font, '#c2d0d6', max_text, fallback_font=small_font)
         return im
 
