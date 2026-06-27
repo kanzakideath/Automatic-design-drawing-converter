@@ -161,6 +161,19 @@ EN_TRANSLATIONS = {
     '言語を適用': 'Apply language',
     'フォーカス表示を切り替え': 'Toggle focus layout',
     'プレビューキャッシュをクリア': 'Clear preview cache',
+    'プレビュー ON': 'Preview ON',
+    'プレビュー OFF': 'Preview OFF',
+    'プレビューOFF': 'Preview OFF',
+    'プレビューをONにする': 'Turn Preview ON',
+    'プレビューをOFFにする': 'Turn Preview OFF',
+    'プレビュー停止中': 'Preview paused',
+    'プレビューをOFFにしています': 'Preview is turned off',
+    'プレビューOFF中はGPU起動と設計図プレビュー生成を行いません。': 'While preview is off, GPU startup and schematic preview rendering are skipped.',
+    'プレビュー表示': 'Preview display',
+    'プレビューをONにするとここに表示します': 'Turn preview on to show it here',
+    'プレビューがOFFです。先にプレビューをONにしてください。': 'Preview is off. Turn preview on first.',
+    '進行状況: プレビューをONにしました': 'Status: Preview turned on',
+    '進行状況: プレビューをOFFにしました': 'Status: Preview turned off',
     '素材変換ルールを開く': 'Open material rules',
     '大きいプレビューで確認': 'Open large preview',
     'Minecraftテクスチャ: ': 'Minecraft textures: ',
@@ -866,6 +879,10 @@ class InteractivePreview(tk.Canvas):
         }
 
     def _render_gpu(self, w, h):
+        if not self.app.preview_enabled:
+            self.close_gpu(wait=False)
+            self._draw_disabled(w, h)
+            return True
         if self.app.loaded_nbt is None:
             self.close_gpu(wait=False)
             self._draw_waiting(w, h)
@@ -1097,6 +1114,10 @@ class InteractivePreview(tk.Canvas):
         self._after_id = None
         w = max(260, self.winfo_width())
         h = max(150, self.winfo_height())
+        if not self.app.preview_enabled:
+            self.close_gpu(wait=False)
+            self._draw_disabled(w, h)
+            return
         if self._render_gpu(w, h):
             return
         try:
@@ -1150,6 +1171,15 @@ class InteractivePreview(tk.Canvas):
                          font=('Yu Gothic UI', 16, 'bold'))
         self.create_text(w / 2, h / 2 + 18, text=translate_text('.litematic を読み込むとここにプレビューを表示します'),
                          fill='#b8c7d8', font=('Yu Gothic UI', 10))
+
+    def _draw_disabled(self, w, h):
+        self.delete('all')
+        self.create_rectangle(0, 0, w, h, fill='#101820', outline='#334155')
+        self.create_text(w / 2, h / 2 - 12, text=translate_text('プレビュー停止中'), fill='#ffb34d',
+                         font=('Yu Gothic UI', 16, 'bold'))
+        self.create_text(w / 2, h / 2 + 20,
+                         text=translate_text('プレビューOFF中はGPU起動と設計図プレビュー生成を行いません。'),
+                         fill='#b8c7d8', font=('Yu Gothic UI', 10), width=max(240, w - 70))
 
     def _draw_loading(self, w, h):
         self.delete('all')
@@ -1233,6 +1263,7 @@ class DashboardApp:
         self.app_settings = _load_app_settings()
         self.language = _normalize_language(self.app_settings.get('language', 'ja'))
         set_current_language(self.language)
+        self.preview_enabled = bool(self.app_settings.get('preview_enabled', True))
         self.icon_cache = {}
         self.image_cache = {}
         self.src_path = None
@@ -1289,14 +1320,19 @@ class DashboardApp:
         self._material_rows_cache = None
 
     def _dispose_preview_view(self):
-        if hasattr(self, 'preview_view'):
+        view = getattr(self, 'preview_view', None)
+        if view is not None:
             try:
-                self.preview_view.close_gpu(wait=False)
-                self.preview_view._gpu_token = None
-                self.preview_view._last_render_key = None
-                self.preview_view._last_render_image = None
+                view.close_gpu(wait=False)
+                view._gpu_token = None
+                view._last_render_key = None
+                view._last_render_image = None
             except Exception:
                 pass
+        try:
+            delattr(self, 'preview_view')
+        except Exception:
+            pass
 
     def _cancel_preview_jobs(self, advance_generation=False):
         if advance_generation:
@@ -1665,6 +1701,9 @@ class DashboardApp:
         self._open_gpu_preview()
 
     def _open_gpu_preview(self):
+        if not self.preview_enabled:
+            messagebox.showinfo(APP_TITLE, 'プレビューがOFFです。先にプレビューをONにしてください。')
+            return True
         if hasattr(self, 'preview_view'):
             try:
                 self.preview_view.close_gpu(wait=True)
@@ -1780,6 +1819,9 @@ class DashboardApp:
 
         self._button(body, 'このレジストリを適用', apply_registry, bg=UI['ACCENT']).pack(anchor='w')
         self._label(body, '表示', size=10, weight='bold', bg=UI['BG']).pack(anchor='w', pady=(18, 6))
+        preview_toggle_label = 'プレビューをOFFにする' if self.preview_enabled else 'プレビューをONにする'
+        self._button(body, preview_toggle_label, self.toggle_preview_enabled,
+                     bg=UI['BTN_BG_2']).pack(anchor='w')
         self._button(body, 'フォーカス表示を切り替え', self.toggle_focus_mode, bg=UI['BTN_BG_2']).pack(anchor='w')
         self._button(body, 'プレビューキャッシュをクリア', self.clear_preview_cache,
                      bg=UI['BTN_BG_2']).pack(anchor='w', pady=(8, 0))
@@ -2077,6 +2119,11 @@ class DashboardApp:
                      size=8, padx=10, pady=4).pack(side='left', padx=4)
         self._button(right, '設定', self.open_settings_dialog, bg=UI['BTN_BG'],
                      size=8, padx=10, pady=4).pack(side='left', padx=4)
+        preview_label = 'プレビュー ON' if self.preview_enabled else 'プレビュー OFF'
+        preview_bg = UI['SUCCESS_BG'] if self.preview_enabled else UI['WARNING_BG']
+        preview_fg = UI['GREEN'] if self.preview_enabled else UI['ORANGE']
+        self._button(right, preview_label, self.toggle_preview_enabled, bg=preview_bg,
+                     fg=preview_fg, size=8, padx=10, pady=4).pack(side='left', padx=4)
         focus_label = '素材編集' if self.focus_mode else 'プレビュー画面'
         self._button(right, focus_label, self.toggle_focus_mode, bg=UI['ACCENT'] if self.focus_mode else UI['BTN_BG'],
                      fg='white' if self.focus_mode else UI['TEXT'], size=8,
@@ -2182,14 +2229,24 @@ class DashboardApp:
 
         hero = tk.Frame(panel, bg=UI['PANEL'])
         hero.pack(fill='x', padx=12, pady=(0, 10))
-        img = self._loaded_thumb(82, 110)
-        pic = tk.Label(hero, image=img, bg=UI['PANEL'])
-        pic.image = img
-        pic.pack(anchor='center', pady=(0, 8))
+        if self.preview_enabled:
+            img = self._loaded_thumb(82, 110)
+            pic = tk.Label(hero, image=img, bg=UI['PANEL'])
+            pic.image = img
+            pic.pack(anchor='center', pady=(0, 8))
+        else:
+            off = tk.Frame(hero, bg=UI['PANEL_2'], highlightthickness=1, highlightbackground=UI['BORDER'])
+            off.pack(anchor='center', fill='x', pady=(0, 8), ipady=18)
+            self._label(off, 'プレビューOFF', size=10, weight='bold',
+                        fg=UI['ORANGE'], bg=UI['PANEL_2']).pack(anchor='center', pady=(2, 1))
+            self._label(off, 'プレビューをONにするとここに表示します', size=7,
+                        fg=UI['MUTED'], bg=UI['PANEL_2']).pack(anchor='center')
         name = os.path.basename(self.src_path or '')
         self._label(hero, name, size=10, weight='bold', wraplength=238,
                     justify='center').pack(anchor='center')
-        self._label(hero, '実テクスチャでプレビュー中', size=8, fg=UI['GREEN']).pack(anchor='center', pady=(2, 0))
+        status_text = '実テクスチャでプレビュー中' if self.preview_enabled else 'プレビュー停止中'
+        status_color = UI['GREEN'] if self.preview_enabled else UI['ORANGE']
+        self._label(hero, status_text, size=8, fg=status_color).pack(anchor='center', pady=(2, 0))
 
         stats = self._stats()
         grid = tk.Frame(panel, bg=UI['PANEL'])
@@ -2203,13 +2260,17 @@ class DashboardApp:
 
         action = tk.Frame(panel, bg=UI['PANEL'])
         action.pack(fill='x', padx=12, pady=(0, 10))
-        self._button(action, '全画面表示', self.open_full_preview,
+        first_label = '全画面表示' if self.preview_enabled else 'プレビューをONにする'
+        first_cmd = self.open_full_preview if self.preview_enabled else lambda: self.set_preview_enabled(True)
+        self._button(action, first_label, first_cmd,
                      bg=UI['ACCENT'], fg='white', size=10, pady=8).pack(fill='x', pady=(0, 6))
         self._button(action, '素材を編集', self.toggle_focus_mode,
                      bg=UI['BTN_BG_2'], size=9, pady=7).pack(fill='x', pady=(0, 6))
         row = tk.Frame(action, bg=UI['PANEL'])
         row.pack(fill='x')
-        self._button(row, 'PNG保存', self.export_preview, bg=UI['BTN_BG'],
+        self._button(row, 'PNG保存', self.export_preview,
+                     bg=UI['BTN_BG'] if self.preview_enabled else UI['KEEP_BG'],
+                     fg=UI['TEXT'] if self.preview_enabled else UI['MUTED'],
                      size=8, padx=8, pady=6).pack(side='left', fill='x', expand=True, padx=(0, 5))
         self._button(row, '建材リスト', self.open_materials_window, bg=UI['BTN_BG'],
                      size=8, padx=8, pady=6).pack(side='left', fill='x', expand=True, padx=(5, 0))
@@ -2474,8 +2535,19 @@ class DashboardApp:
 
         head_actions = tk.Frame(head, bg=UI['PANEL'])
         head_actions.grid(row=0, column=1, sticky='e')
-        self._button(head_actions, '全画面表示', self.open_full_preview,
-                     bg=UI['ACCENT'], fg='white', size=9, padx=14, pady=7).pack(side='left', padx=(0, 8))
+        if self.preview_enabled:
+            self._button(head_actions, '全画面表示', self.open_full_preview,
+                         bg=UI['ACCENT'], fg='white', size=9, padx=14, pady=7).pack(side='left', padx=(0, 8))
+            toggle_text = 'プレビューをOFFにする'
+            toggle_bg = UI['BTN_BG_2']
+        else:
+            self._button(head_actions, 'プレビューをONにする', lambda: self.set_preview_enabled(True),
+                         bg=UI['ACCENT'], fg='white', size=9, padx=14, pady=7).pack(side='left', padx=(0, 8))
+            toggle_text = 'プレビュー OFF'
+            toggle_bg = UI['WARNING_BG']
+        self._button(head_actions, toggle_text, self.toggle_preview_enabled,
+                     bg=toggle_bg, fg=UI['ORANGE'] if not self.preview_enabled else UI['TEXT'],
+                     size=9, padx=12, pady=7).pack(side='left', padx=(0, 8))
         self._button(head_actions, '素材編集', self.toggle_focus_mode,
                      bg=UI['BTN_BG_2'], size=9, padx=12, pady=7).pack(side='left', padx=(0, 8))
         self.start_btn = self._button(head_actions, '変換実行', self.do_convert, bg=UI['GREEN'],
@@ -2485,25 +2557,34 @@ class DashboardApp:
 
         preview_w = 1120 if self.focus_mode else 720
         preview_h = 520 if self.focus_mode else 410
-        self.preview_view = InteractivePreview(panel, self, width=preview_w, height=preview_h)
-        self.preview_view.grid(row=1, column=0, sticky='nsew', padx=16, pady=(0, 10))
+        if self.preview_enabled:
+            self.preview_view = InteractivePreview(panel, self, width=preview_w, height=preview_h)
+            self.preview_view.grid(row=1, column=0, sticky='nsew', padx=16, pady=(0, 10))
+        else:
+            self._build_preview_off_panel(panel, row=1, height=preview_h)
 
         controls = tk.Frame(panel, bg=UI['PANEL'])
         controls.grid(row=2, column=0, sticky='ew', padx=16, pady=(0, 8))
-        for label, args in [
-            ('近景', (-28.0, 0.24, 3.2, True)),
-            ('全体', (-38.0, 0.34, 2.2, True)),
-            ('上から', (0.0, 0.72, 2.0, True)),
-            ('横から', (-90.0, 0.20, 2.8, True)),
-        ]:
-            self._button(controls, label, lambda a=args: self._preview_set_view(*a),
-                         bg=UI['BTN_BG_2'], size=9, padx=13, pady=6).pack(side='left', padx=(0, 7))
-        self._button(controls, 'リセット', self._reset_preview_view,
-                     bg=UI['BTN_BG'], size=9, padx=13, pady=6).pack(side='left', padx=(0, 7))
-        self._button(controls, '拡大', lambda: self._preview_zoom(1.12),
-                     bg=UI['BTN_BG_2'], size=9, padx=12, pady=6).pack(side='right', padx=(7, 0))
-        self._button(controls, '縮小', lambda: self._preview_zoom(1 / 1.12),
-                     bg=UI['BTN_BG_2'], size=9, padx=12, pady=6).pack(side='right')
+        if self.preview_enabled:
+            for label, args in [
+                ('近景', (-28.0, 0.24, 3.2, True)),
+                ('全体', (-38.0, 0.34, 2.2, True)),
+                ('上から', (0.0, 0.72, 2.0, True)),
+                ('横から', (-90.0, 0.20, 2.8, True)),
+            ]:
+                self._button(controls, label, lambda a=args: self._preview_set_view(*a),
+                             bg=UI['BTN_BG_2'], size=9, padx=13, pady=6).pack(side='left', padx=(0, 7))
+            self._button(controls, 'リセット', self._reset_preview_view,
+                         bg=UI['BTN_BG'], size=9, padx=13, pady=6).pack(side='left', padx=(0, 7))
+            self._button(controls, '拡大', lambda: self._preview_zoom(1.12),
+                         bg=UI['BTN_BG_2'], size=9, padx=12, pady=6).pack(side='right', padx=(7, 0))
+            self._button(controls, '縮小', lambda: self._preview_zoom(1 / 1.12),
+                         bg=UI['BTN_BG_2'], size=9, padx=12, pady=6).pack(side='right')
+        else:
+            self._label(controls, 'プレビューOFF中はGPU起動と設計図プレビュー生成を行いません。',
+                        size=8, fg=UI['MUTED'], bg=UI['PANEL']).pack(side='left')
+            self._button(controls, 'プレビューをONにする', lambda: self.set_preview_enabled(True),
+                         bg=UI['BTN_BG_2'], size=9, padx=13, pady=6).pack(side='right')
 
         tabs = tk.Frame(panel, bg=UI['PANEL'])
         tabs.grid(row=3, column=0, sticky='ew', padx=16, pady=(0, 8))
@@ -2515,12 +2596,31 @@ class DashboardApp:
             btn.pack(side='left', fill='x', expand=True, padx=(0, 4))
             self.preview_tab_buttons[key] = btn
         self._button(tabs, 'PNG保存', self.export_preview,
-                      bg=UI['BTN_BG_2'], size=9, padx=12, pady=6).pack(side='left', padx=(8, 0))
+                      bg=UI['BTN_BG_2'] if self.preview_enabled else UI['KEEP_BG'],
+                      fg=UI['TEXT'] if self.preview_enabled else UI['MUTED'],
+                      size=9, padx=12, pady=6).pack(side='left', padx=(8, 0))
 
         self.preview_body = tk.Frame(panel, bg=UI['PANEL'])
         self.preview_body.grid(row=4, column=0, sticky='nsew', padx=16)
         self._compact_preview_body = True
         self._build_preview_body_compact()
+
+    def _build_preview_off_panel(self, parent, row=1, height=410):
+        box = tk.Frame(parent, bg=UI['PANEL_2'], highlightthickness=1, highlightbackground=UI['BORDER_HI'])
+        box.grid(row=row, column=0, sticky='nsew', padx=16, pady=(0, 10))
+        box.grid_propagate(False)
+        box.configure(height=height)
+        box.grid_columnconfigure(0, weight=1)
+        box.grid_rowconfigure(0, weight=1)
+        inner = tk.Frame(box, bg=UI['PANEL_2'])
+        inner.grid(row=0, column=0)
+        self._label(inner, 'プレビュー停止中', size=18, weight='bold',
+                    fg=UI['ORANGE'], bg=UI['PANEL_2']).pack(anchor='center', pady=(0, 8))
+        self._label(inner, 'プレビューOFF中はGPU起動と設計図プレビュー生成を行いません。',
+                    size=10, fg=UI['TEXT_SOFT'], bg=UI['PANEL_2'],
+                    justify='center', wraplength=640).pack(anchor='center', pady=(0, 14))
+        self._button(inner, 'プレビューをONにする', lambda: self.set_preview_enabled(True),
+                     bg=UI['ACCENT'], fg='white', size=10, padx=18, pady=8).pack(anchor='center')
 
     def _build_preview_body_compact(self):
         for w in self.preview_body.winfo_children():
@@ -2599,12 +2699,35 @@ class DashboardApp:
             except tk.TclError:
                 pass
             self._preview_refresh_after_id = None
+        if not self.preview_enabled:
+            self._refresh_materials_window_if_open()
+            return
 
         def run():
             self._preview_refresh_after_id = None
             self._refresh_preview_only()
 
         self._preview_refresh_after_id = self.root.after(max(1, int(delay)), run)
+
+    def set_preview_enabled(self, enabled):
+        enabled = bool(enabled)
+        if self.preview_enabled == enabled:
+            return
+        self.preview_enabled = enabled
+        self.app_settings['preview_enabled'] = enabled
+        _save_app_settings(self.app_settings)
+        if not enabled:
+            self._cancel_preview_jobs(advance_generation=False)
+        for widget in self.header.winfo_children():
+            widget.destroy()
+        self._build_header()
+        self._refresh_layout()
+        if enabled and self.loaded_nbt is not None:
+            self.root.after(180, self._kick_preview_start)
+        self._sync_progress(text='進行状況: プレビューをONにしました' if enabled else '進行状況: プレビューをOFFにしました')
+
+    def toggle_preview_enabled(self):
+        self.set_preview_enabled(not self.preview_enabled)
 
     # ---------------------------------------------------------------- events
     def _bind_wheel(self, widget, target_canvas):
@@ -2667,7 +2790,8 @@ class DashboardApp:
         self._apply_dataversion(nbt)
         self._sync_progress(52, '進行状況: ブロックパレットを解析中...')
         self._rescan()
-        self.root.after(220, self._kick_preview_start)
+        if self.preview_enabled:
+            self.root.after(220, self._kick_preview_start)
         self._sync_progress(66, '進行状況: ルール設定中...')
         self.save_state.configure(text='● 未保存の変更があります', fg=UI['ORANGE'])
 
@@ -3183,7 +3307,7 @@ class DashboardApp:
             except tk.TclError:
                 pass
             self._preview_refresh_after_id = None
-        if hasattr(self, 'preview_view'):
+        if self.preview_enabled and hasattr(self, 'preview_view'):
             self.preview_view.refresh(immediate=True)
         if hasattr(self, 'preview_body'):
             if getattr(self, '_compact_preview_body', False):
@@ -3191,10 +3315,11 @@ class DashboardApp:
             else:
                 self._build_preview_body()
         self._refresh_materials_window_if_open()
-        self.root.after(180, lambda: self._kick_preview_start(24))
+        if self.preview_enabled:
+            self.root.after(180, lambda: self._kick_preview_start(8))
 
     def _kick_preview_start(self, retries=24):
-        if self.loaded_nbt is None or not hasattr(self, 'preview_view'):
+        if not self.preview_enabled or self.loaded_nbt is None or not hasattr(self, 'preview_view'):
             return
         try:
             self.preview_view.refresh(immediate=True)
@@ -3422,6 +3547,8 @@ class DashboardApp:
         self._gpu_payload_build_generation = None
         self._gpu_open_when_ready = False
         self._invalidate_material_rows_cache()
+        if not self.preview_enabled:
+            self._preview_source_cache = {}
         if hasattr(self, 'preview_view'):
             self.preview_view._last_render_key = None
             self.preview_view._last_render_image = None
@@ -3486,6 +3613,9 @@ class DashboardApp:
     def export_preview(self):
         if self.loaded_nbt is None:
             messagebox.showinfo(APP_TITLE, '先に設計図を読み込んでください。')
+            return
+        if not self.preview_enabled:
+            messagebox.showinfo(APP_TITLE, 'プレビューがOFFです。先にプレビューをONにしてください。')
             return
         default_name = os.path.splitext(os.path.basename(self.src_path or 'preview'))[0] + '_preview.png'
         out = filedialog.asksaveasfilename(
@@ -3895,7 +4025,7 @@ class DashboardApp:
         return rec[0], rec[1], rec[2], rec[3], props
 
     def _queue_gpu_preview_warmup(self):
-        if self.loaded_nbt is None:
+        if self.loaded_nbt is None or not self.preview_enabled:
             return
         try:
             if self._gpu_warmup_after_id is not None:
@@ -3942,6 +4072,9 @@ class DashboardApp:
         self._sync_progress(text='進行状況: 高密度プレビュー準備完了')
 
     def _schedule_gpu_preview_warmup(self, open_when_ready=False):
+        if not self.preview_enabled:
+            self._gpu_open_when_ready = False
+            return
         current_generation = self._load_generation
         if self._gpu_payload_building and self._gpu_payload_build_generation != current_generation:
             self._gpu_payload_building = False
@@ -4009,6 +4142,14 @@ class DashboardApp:
             messagebox.showwarning(APP_TITLE, '全画面プレビューの準備に失敗しました。\n\n%s' % (error or 'unknown error'))
 
     def _gpu_preview_payload(self, max_blocks=GPU_PREVIEW_BLOCK_LIMIT, max_faces=GPU_PREVIEW_FACE_LIMIT):
+        if not self.preview_enabled:
+            return {
+                'title': os.path.basename(self.src_path or 'schematic'),
+                'blocks': [],
+                'occupied': set(),
+                'bounds': self._record_bounds([]),
+                'max_faces': max_faces,
+            }
         max_blocks = max(1, int(max_blocks or GPU_PREVIEW_BLOCK_LIMIT))
         max_faces = max(1, int(max_faces or GPU_PREVIEW_FACE_LIMIT))
         token = self._preview_cache_token() + (max_blocks, max_faces)
@@ -4152,6 +4293,18 @@ class DashboardApp:
         return mask
 
     def _loaded_thumb(self, w, h):
+        if not self.preview_enabled:
+            key = ('loaded-disabled', w, h, self.src_path, self.language)
+            if key in self.image_cache:
+                return self.image_cache[key]
+            im = Image.new('RGB', (w, h), '#101820')
+            draw = ImageDraw.Draw(im)
+            draw.rectangle([0, 0, w - 1, h - 1], outline='#334155')
+            draw.text((max(6, int(w * 0.12)), max(8, int(h * 0.35))),
+                      self._t('プレビューOFF'), fill='#ffb34d', font=self._ui_font(max(10, min(16, w // 6)), True))
+            img = ImageTk.PhotoImage(im)
+            self.image_cache[key] = img
+            return img
         key = ('loaded', w, h, self.src_path, icons.minecraft_assets_label())
         if key in self.image_cache:
             return self.image_cache[key]
@@ -4164,6 +4317,8 @@ class DashboardApp:
         return img
 
     def _result_preview_image(self, w, h):
+        if not self.preview_enabled:
+            return self._loaded_thumb(w, h)
         key = ('result', w, h, self.src_path, tuple(sorted(self.overrides.items())),
                icons.minecraft_assets_label())
         if key in self.image_cache:
