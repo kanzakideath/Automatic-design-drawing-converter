@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-.litematic（Litematica の設計図 = gzip 圧縮 NBT）の読み書きと素材変換。
+.litematic（Litematica の設計図 = gzip 圧縮 NBT）と
+バニラ Structure NBT（.nbt）の読み書きと素材変換。
 
 変換は各リージョンの BlockStatePalette の Name を書き換えるだけで行う。
 ブロック状態（向き等の Properties）・配置データ(BlockStates)・タイルエンティティ
@@ -25,8 +26,16 @@ class Conversion:
 
 
 def load(path):
-    """litematic を読み込んで nbtlib の File を返す。"""
+    """litematic / structure nbt を読み込んで nbtlib の File を返す。"""
     return nbtlib.load(path)
+
+
+def is_litematic(nbt):
+    return hasattr(nbt, 'get') and 'Regions' in nbt
+
+
+def is_structure_nbt(nbt):
+    return hasattr(nbt, 'get') and all(k in nbt for k in ('size', 'palette', 'blocks'))
 
 
 def _vec3(value):
@@ -80,6 +89,33 @@ def _region_palette_counts(reg):
     return [(str(entry['Name']), counts[i]) for i, entry in enumerate(palette)]
 
 
+def _structure_palette_counts(nbt):
+    palette = nbt.get('palette', [])
+    blocks = nbt.get('blocks', [])
+    if len(palette) == 0:
+        return []
+    counts = [0] * len(palette)
+    for block in blocks:
+        try:
+            state = int(block.get('state', 0))
+        except Exception:
+            continue
+        if 0 <= state < len(counts):
+            counts[state] += 1
+    return [(str(entry['Name']), counts[i]) for i, entry in enumerate(palette)]
+
+
+def _iter_palette_counts(nbt):
+    if is_litematic(nbt):
+        for reg in nbt['Regions'].values():
+            for item in _region_palette_counts(reg):
+                yield item
+        return
+    if is_structure_nbt(nbt):
+        for item in _structure_palette_counts(nbt):
+            yield item
+
+
 def scan(nbt):
     """
     変換対象になりうる素材を検出して Conversion のリストを返す。
@@ -87,13 +123,12 @@ def scan(nbt):
     """
     counts = {}    # source(full id) -> variant 数
     order = []
-    for reg in nbt['Regions'].values():
-        for name, count in _region_palette_counts(reg):
-            if bd.is_convertible(name):
-                if name not in counts:
-                    counts[name] = 0
-                    order.append(name)
-                counts[name] += count
+    for name, count in _iter_palette_counts(nbt):
+        if bd.is_convertible(name):
+            if name not in counts:
+                counts[name] = 0
+                order.append(name)
+            counts[name] += count
 
     convs = []
     for src in order:
@@ -116,20 +151,19 @@ def scan_all(nbt):
     conv_order = []
     other_counts = {}
     other_order = []
-    for reg in nbt['Regions'].values():
-        for name, count in _region_palette_counts(reg):
-            if bd.is_convertible(name):
-                if name not in conv_counts:
-                    conv_counts[name] = 0
-                    conv_order.append(name)
-                conv_counts[name] += count
-            else:
-                if bd.strip_ns(name) == 'air':
-                    continue
-                if name not in other_counts:
-                    other_counts[name] = 0
-                    other_order.append(name)
-                other_counts[name] += count
+    for name, count in _iter_palette_counts(nbt):
+        if bd.is_convertible(name):
+            if name not in conv_counts:
+                conv_counts[name] = 0
+                conv_order.append(name)
+            conv_counts[name] += count
+        else:
+            if bd.strip_ns(name) == 'air':
+                continue
+            if name not in other_counts:
+                other_counts[name] = 0
+                other_order.append(name)
+            other_counts[name] += count
 
     convs = []
     for src in conv_order:
@@ -149,8 +183,14 @@ def apply(nbt, mapping):
     パレットの Name を書き換える。書き換えた palette entry 数を返す。
     """
     changed = 0
-    for reg in nbt['Regions'].values():
-        for entry in reg['BlockStatePalette']:
+    if is_litematic(nbt):
+        palettes = (reg['BlockStatePalette'] for reg in nbt['Regions'].values())
+    elif is_structure_nbt(nbt):
+        palettes = (nbt['palette'],)
+    else:
+        palettes = ()
+    for palette in palettes:
+        for entry in palette:
             name = str(entry['Name'])
             tgt = mapping.get(name)
             if not tgt:
@@ -165,7 +205,23 @@ def apply(nbt, mapping):
 
 
 def palette_size(nbt):
-    return sum(len(r['BlockStatePalette']) for r in nbt['Regions'].values())
+    if is_litematic(nbt):
+        return sum(len(r['BlockStatePalette']) for r in nbt['Regions'].values())
+    if is_structure_nbt(nbt):
+        return len(nbt.get('palette', []))
+    return 0
+
+
+def total_blocks(nbt):
+    try:
+        total = int(nbt.get('Metadata', {}).get('TotalBlocks', 0))
+        if total:
+            return total
+    except Exception:
+        pass
+    if is_structure_nbt(nbt):
+        return len(nbt.get('blocks', []))
+    return 0
 
 
 def save(nbt, path):

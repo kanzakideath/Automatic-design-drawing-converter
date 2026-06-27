@@ -355,6 +355,11 @@ EN_TRANSLATIONS = {
     '高品質': 'High Quality',
     'ここに .litematic ファイルをドラッグ&ドロップ\nまたはクリックして選択': 'Drag and drop a .litematic file here\nor click to choose one',
     'ここをクリックして .litematic を選択': 'Click here to choose a .litematic file',
+    'ここに .litematic / .nbt ファイルをドラッグ&ドロップ\nまたはクリックして選択': 'Drag and drop a .litematic / .nbt file here\nor click to choose one',
+    'ここをクリックして .litematic / .nbt を選択': 'Click here to choose a .litematic / .nbt file',
+    'Litematica / Structure NBT': 'Litematica / Structure NBT',
+    'Structure NBT (Vanilla)': 'Structure NBT (Vanilla)',
+    '読み込みに失敗しました。\n.litematic / .nbt 形式ですか？\n\n%s': 'Failed to load the file.\nIs it a .litematic / .nbt file?\n\n%s',
     '読み込み待ち': 'Waiting for file',
     '進行状況: 待機中': 'Status: Idle',
     '進行状況: ファイルを読み込み中...': 'Status: Loading file...',
@@ -1414,8 +1419,8 @@ class DashboardApp:
             self.root.after(220, self._kick_preview_start)
 
     def _default_drop_text(self):
-        return ('ここに .litematic ファイルをドラッグ&ドロップ\nまたはクリックして選択'
-                if _HAS_DND else 'ここをクリックして .litematic を選択')
+        return ('ここに .litematic / .nbt ファイルをドラッグ&ドロップ\nまたはクリックして選択'
+                if _HAS_DND else 'ここをクリックして .litematic / .nbt を選択')
 
     def _configure_style(self):
         style = ttk.Style()
@@ -2747,7 +2752,10 @@ class DashboardApp:
     def choose_file(self):
         path = filedialog.askopenfilename(
             title='設計図ファイルを選択',
-            filetypes=[('Litematica 設計図', '*.litematic'), ('すべて', '*.*')])
+            filetypes=[('Litematica / Structure NBT', '*.litematic *.nbt'),
+                       ('Litematica 設計図', '*.litematic'),
+                       ('Structure NBT (Vanilla)', '*.nbt'),
+                       ('すべて', '*.*')])
         if path:
             self.load_file(path)
 
@@ -2769,7 +2777,7 @@ class DashboardApp:
             nbt = converter.load(path)
         except Exception as e:
             self._sync_progress(0, '進行状況: 読み込み失敗')
-            messagebox.showerror(APP_TITLE, '読み込みに失敗しました。\n.litematic 形式ですか？\n\n%s' % e)
+            messagebox.showerror(APP_TITLE, '読み込みに失敗しました。\n.litematic / .nbt 形式ですか？\n\n%s' % e)
             return
 
         self.src_path = path
@@ -2798,7 +2806,7 @@ class DashboardApp:
     def _apply_dataversion(self, nbt):
         dv = None
         try:
-            dv = int(nbt.get('MinecraftDataVersion'))
+            dv = int(nbt.get('MinecraftDataVersion', nbt.get('DataVersion')))
         except Exception:
             pass
         f = bd.file_for_dataversion(dv)
@@ -2823,15 +2831,13 @@ class DashboardApp:
     def _metadata(self):
         if self.loaded_nbt is None:
             return {'format': '-', 'size': '-', 'area': '-', 'total': '-', 'unique': '-'}
-        try:
-            total = int(self.loaded_nbt.get('Metadata', {}).get('TotalBlocks', 0))
-        except Exception:
-            total = 0
+        total = converter.total_blocks(self.loaded_nbt)
         size = '-'
         if self.src_path and os.path.exists(self.src_path):
             size = '%.1f MB' % (os.path.getsize(self.src_path) / (1024 * 1024))
+        fmt = 'Structure NBT (Vanilla)' if converter.is_structure_nbt(self.loaded_nbt) else 'Schematic (Litematica)'
         return {
-            'format': 'Schematic (Litematica)',
+            'format': fmt,
             'size': size,
             'area': self._schematic_area(),
             'total': '{:,}'.format(total) if total else '-',
@@ -2853,6 +2859,11 @@ class DashboardApp:
 
     def _schematic_area(self):
         try:
+            if converter.is_structure_nbt(self.loaded_nbt):
+                size = self._vec3(self.loaded_nbt.get('size'))
+                if size is not None:
+                    sx, sy, sz = size
+                    return 'X 0〜%s / Y 0〜%s / Z 0〜%s' % (max(0, sx - 1), max(0, sy - 1), max(0, sz - 1))
             regs = self.loaded_nbt.get('Regions', {})
             ranges = []
             for reg in regs.values():
@@ -3989,10 +4000,14 @@ class DashboardApp:
                     '素材を変える場合は、中央の一覧で置き換え先を選ぶか「自動マッピング」を押してください。'):
                 return
         default_out = converter.default_output_path(self.src_path)
+        default_ext = os.path.splitext(default_out)[1] or '.litematic'
+        out_types = [('Litematica 設計図', '*.litematic'), ('Structure NBT (Vanilla)', '*.nbt'), ('すべて', '*.*')]
+        if default_ext.lower() == '.nbt':
+            out_types = [('Structure NBT (Vanilla)', '*.nbt'), ('Litematica 設計図', '*.litematic'), ('すべて', '*.*')]
         out = filedialog.asksaveasfilename(
             title='変換後のファイルの保存先', initialdir=os.path.dirname(default_out),
-            initialfile=os.path.basename(default_out), defaultextension='.litematic',
-            filetypes=[('Litematica 設計図', '*.litematic'), ('すべて', '*.*')])
+            initialfile=os.path.basename(default_out), defaultextension=default_ext,
+            filetypes=out_types)
         if not out:
             return
         if os.path.abspath(out) == os.path.abspath(self.src_path):
@@ -4879,12 +4894,15 @@ class DashboardApp:
             if records is None:
                 records = []
                 try:
-                    regs = self.loaded_nbt.get('Regions', {})
-                    for reg in regs.values():
-                        if not full_source and len(records) >= source_cap:
-                            break
-                        cap_left = source_cap if full_source else max(1, source_cap - len(records))
-                        records.extend(self._region_source_records(reg, cap_left))
+                    if converter.is_structure_nbt(self.loaded_nbt):
+                        records = self._structure_source_records(self.loaded_nbt, source_cap)
+                    else:
+                        regs = self.loaded_nbt.get('Regions', {})
+                        for reg in regs.values():
+                            if not full_source and len(records) >= source_cap:
+                                break
+                            cap_left = source_cap if full_source else max(1, source_cap - len(records))
+                            records.extend(self._region_source_records(reg, cap_left))
                 except Exception:
                     return []
                 if records:
@@ -4917,6 +4935,64 @@ class DashboardApp:
                        for i in range(requested)]
         self._preview_source_cache[key] = sampled
         return sampled
+
+    def _structure_source_records(self, nbt, max_blocks):
+        palette = nbt.get('palette', [])
+        blocks = nbt.get('blocks', [])
+        if len(palette) == 0 or len(blocks) == 0:
+            return []
+        palette_cache = []
+        for entry in palette:
+            source = str(entry.get('Name', 'minecraft:air'))
+            base = bd.strip_ns(source)
+            if base in ('air', 'cave_air', 'void_air'):
+                palette_cache.append(None)
+                continue
+            props_tag = entry.get('Properties', {})
+            try:
+                props = {str(k): str(v) for k, v in props_tag.items()}
+            except Exception:
+                props = {}
+            palette_cache.append((source, props))
+
+        cap = max(int(max_blocks or 0), 900)
+        if cap >= 10 ** 8:
+            index_iter = range(len(blocks))
+        else:
+            scan_budget = min(len(blocks), max(6000, cap * 8))
+            if scan_budget >= len(blocks):
+                index_iter = range(len(blocks))
+            else:
+                step = len(blocks) / float(scan_budget)
+                index_iter = (min(len(blocks) - 1, int((i + 0.5) * step)) for i in range(scan_budget))
+        out = []
+        seen = 0
+        for idx in index_iter:
+            block = blocks[idx]
+            try:
+                state = int(block.get('state', 0))
+            except Exception:
+                continue
+            if state < 0 or state >= len(palette_cache):
+                continue
+            cached = palette_cache[state]
+            if cached is None:
+                continue
+            try:
+                pos = block.get('pos')
+                x, y, z = int(pos[0]), int(pos[1]), int(pos[2])
+            except Exception:
+                continue
+            source, props = cached
+            rec = (x, y, z, source, props)
+            seen += 1
+            if len(out) < cap:
+                out.append(rec)
+            else:
+                slot = (((seen ^ (seen >> 16)) * 1103515245 + 12345) & 0x7fffffff) % seen
+                if slot < cap:
+                    out[slot] = rec
+        return out
 
     def _region_source_records(self, reg, max_blocks):
         palette = reg.get('BlockStatePalette', [])
