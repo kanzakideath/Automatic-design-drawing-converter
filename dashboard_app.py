@@ -2752,9 +2752,11 @@ class DashboardApp:
     def choose_file(self):
         path = filedialog.askopenfilename(
             title='設計図ファイルを選択',
-            filetypes=[('Litematica / Structure NBT', '*.litematic *.nbt'),
+            filetypes=[('Blueprint files', '*.litematic *.nbt *.schem'),
+                       ('Litematica / Structure NBT', '*.litematic *.nbt'),
                        ('Litematica 設計図', '*.litematic'),
                        ('Structure NBT (Vanilla)', '*.nbt'),
+                       ('Sponge schematic', '*.schem'),
                        ('すべて', '*.*')])
         if path:
             self.load_file(path)
@@ -2809,6 +2811,12 @@ class DashboardApp:
             dv = int(nbt.get('MinecraftDataVersion', nbt.get('DataVersion')))
         except Exception:
             pass
+        if dv is None and converter.is_sponge_schem(nbt):
+            try:
+                root = nbt.get('Schematic', nbt)
+                dv = int(root.get('DataVersion'))
+            except Exception:
+                pass
         f = bd.file_for_dataversion(dv)
         if f:
             bd.set_active_file(f)
@@ -2835,7 +2843,12 @@ class DashboardApp:
         size = '-'
         if self.src_path and os.path.exists(self.src_path):
             size = '%.1f MB' % (os.path.getsize(self.src_path) / (1024 * 1024))
-        fmt = 'Structure NBT (Vanilla)' if converter.is_structure_nbt(self.loaded_nbt) else 'Schematic (Litematica)'
+        if converter.is_structure_nbt(self.loaded_nbt):
+            fmt = 'Structure NBT (Vanilla)'
+        elif converter.is_sponge_schem(self.loaded_nbt):
+            fmt = 'Schematic (Sponge/WorldEdit)'
+        else:
+            fmt = 'Schematic (Litematica)'
         return {
             'format': fmt,
             'size': size,
@@ -2861,6 +2874,11 @@ class DashboardApp:
         try:
             if converter.is_structure_nbt(self.loaded_nbt):
                 size = self._vec3(self.loaded_nbt.get('size'))
+                if size is not None:
+                    sx, sy, sz = size
+                    return 'X 0〜%s / Y 0〜%s / Z 0〜%s' % (max(0, sx - 1), max(0, sy - 1), max(0, sz - 1))
+            if converter.is_sponge_schem(self.loaded_nbt):
+                size = converter.schem_dimensions(self.loaded_nbt)
                 if size is not None:
                     sx, sy, sz = size
                     return 'X 0〜%s / Y 0〜%s / Z 0〜%s' % (max(0, sx - 1), max(0, sy - 1), max(0, sz - 1))
@@ -2902,10 +2920,7 @@ class DashboardApp:
 
     def _stats(self):
         records = self._all_records()
-        try:
-            total_blocks = int(self.loaded_nbt.get('Metadata', {}).get('TotalBlocks', 0)) if self.loaded_nbt else 0
-        except Exception:
-            total_blocks = 0
+        total_blocks = converter.total_blocks(self.loaded_nbt) if self.loaded_nbt else 0
         rules = sum(1 for c in records if self._is_changed(c))
         kept = sum(1 for c in records if not self._is_changed(c))
         unset = sum(1 for c in records if self._target_for(c) == KEEP)
@@ -4001,9 +4016,14 @@ class DashboardApp:
                 return
         default_out = converter.default_output_path(self.src_path)
         default_ext = os.path.splitext(default_out)[1] or '.litematic'
-        out_types = [('Litematica 設計図', '*.litematic'), ('Structure NBT (Vanilla)', '*.nbt'), ('すべて', '*.*')]
+        out_types = [('Litematica 設計図', '*.litematic'), ('Structure NBT (Vanilla)', '*.nbt'),
+                     ('Sponge schematic', '*.schem'), ('すべて', '*.*')]
         if default_ext.lower() == '.nbt':
-            out_types = [('Structure NBT (Vanilla)', '*.nbt'), ('Litematica 設計図', '*.litematic'), ('すべて', '*.*')]
+            out_types = [('Structure NBT (Vanilla)', '*.nbt'), ('Litematica 設計図', '*.litematic'),
+                         ('Sponge schematic', '*.schem'), ('すべて', '*.*')]
+        elif default_ext.lower() == '.schem':
+            out_types = [('Sponge schematic', '*.schem'), ('Litematica 設計図', '*.litematic'),
+                         ('Structure NBT (Vanilla)', '*.nbt'), ('すべて', '*.*')]
         out = filedialog.asksaveasfilename(
             title='変換後のファイルの保存先', initialdir=os.path.dirname(default_out),
             initialfile=os.path.basename(default_out), defaultextension=default_ext,
@@ -4400,10 +4420,7 @@ class DashboardApp:
 
     def _focused_render_records(self, max_blocks=5600):
         max_blocks = max(100, int(max_blocks or 5600))
-        try:
-            total_blocks = int(self.loaded_nbt.get('Metadata', {}).get('TotalBlocks', 0)) if self.loaded_nbt else 0
-        except Exception:
-            total_blocks = 0
+        total_blocks = converter.total_blocks(self.loaded_nbt) if self.loaded_nbt else 0
         if AUTO_FOCUS_SURFACE_WARMUP and max_blocks <= 6000 and 0 < total_blocks <= 220000:
             full_surface_key = (id(self.loaded_nbt), 'surface_records', 10 ** 9)
             if full_surface_key in self._preview_source_cache:
@@ -4894,7 +4911,9 @@ class DashboardApp:
             if records is None:
                 records = []
                 try:
-                    if converter.is_structure_nbt(self.loaded_nbt):
+                    if converter.is_sponge_schem(self.loaded_nbt):
+                        records = self._schem_source_records(self.loaded_nbt, source_cap)
+                    elif converter.is_structure_nbt(self.loaded_nbt):
                         records = self._structure_source_records(self.loaded_nbt, source_cap)
                     else:
                         regs = self.loaded_nbt.get('Regions', {})
@@ -4935,6 +4954,61 @@ class DashboardApp:
                        for i in range(requested)]
         self._preview_source_cache[key] = sampled
         return sampled
+
+    def _schem_source_records(self, nbt, max_blocks):
+        dims = converter.schem_dimensions(nbt)
+        if not dims:
+            return []
+        sx, sy, sz = (int(dims[0]), int(dims[1]), int(dims[2]))
+        if sx <= 0 or sy <= 0 or sz <= 0:
+            return []
+        ids = converter.schem_block_ids(nbt)
+        if not ids:
+            return []
+        entries = converter.schem_palette_entries(nbt)
+        max_id = max((entry[0] for entry in entries), default=-1)
+        palette_cache = [None] * (max_id + 1)
+        for state_id, _raw, source, props in entries:
+            base = bd.strip_ns(source)
+            if base in ('air', 'cave_air', 'void_air'):
+                continue
+            palette_cache[state_id] = (source, dict(props or {}))
+
+        total = min(len(ids), sx * sy * sz)
+        cap = max(int(max_blocks or 0), 900)
+        if cap >= 10 ** 8:
+            index_iter = range(total)
+        else:
+            scan_budget = min(total, max(6000, cap * 8))
+            if scan_budget >= total:
+                index_iter = range(total)
+            else:
+                step = total / float(scan_budget)
+                index_iter = (min(total - 1, int((i + 0.5) * step)) for i in range(scan_budget))
+        out = []
+        seen = 0
+        layer = sx * sz
+        for idx in index_iter:
+            state = int(ids[idx])
+            if state < 0 or state >= len(palette_cache):
+                continue
+            cached = palette_cache[state]
+            if cached is None:
+                continue
+            y = idx // layer
+            rem = idx - y * layer
+            z = rem // sx
+            x = rem - z * sx
+            source, props = cached
+            rec = (x, y, z, source, props)
+            seen += 1
+            if len(out) < cap:
+                out.append(rec)
+            else:
+                slot = (((seen ^ (seen >> 16)) * 1103515245 + 12345) & 0x7fffffff) % seen
+                if slot < cap:
+                    out[slot] = rec
+        return out
 
     def _structure_source_records(self, nbt, max_blocks):
         palette = nbt.get('palette', [])
